@@ -1,0 +1,58 @@
+/* Salem — driver cockpit. Always dark: it runs on a dashboard, often at night. */
+body.drv { background: #0b1411; color: #e4ece8; min-height: 100%; }
+.drv-wrap { max-width: 520px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: .75rem 1.5rem; }
+.drv-top { display: flex; justify-content: space-between; align-items: center; padding-block: .5rem 1rem; }
+.drv .brand-name small { color: #8fa69d; }
+.scr { flex: 1; display: flex; flex-direction: column; }
+.scr-body { display: grid; gap: 1.1rem; align-content: start; }
+.center-body { text-align: center; justify-items: center; align-content: center; flex: 1; }
+.stack { display: grid; gap: .6rem; }
+.center { text-align: center; }
+
+.req-card { border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: 1.1rem; display: grid; gap: .8rem; }
+.req-card.alerting { border-color: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.req-card .big { font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; }
+.req-card .note { background: var(--surface-2); border-radius: 8px; padding: .6rem .8rem; color: var(--ink-2); }
+.req-summary { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+.consent-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .8rem; }
+.consent-list li { display: flex; gap: .8rem; align-items: flex-start; }
+.consent-list li > span:first-child { width: 22px; flex: none; color: var(--brand); margin-top: 2px; }
+
+.cam-frame { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 3 / 4; max-height: 52vh; width: 100%; justify-self: center; }
+.cam-frame video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+.cam-ring { position: absolute; inset: 10%; border: 3px solid rgba(255,255,255,.35); border-radius: 50% / 45%; transition: border-color .2s; }
+.cam-ring.ok { border-color: #36b487; }
+.cam-ring.bad { border-color: #ef6b5b; }
+.cam-msg { position: absolute; inset-inline: 0; bottom: 0; padding: .6rem; text-align: center; background: linear-gradient(transparent, rgba(0,0,0,.75)); color: #fff; font-weight: 600; }
+.calib-step { display: grid; gap: .5rem; }
+.calib-step b { font-family: var(--font-display); font-size: 1.15rem; }
+
+/* Active cockpit */
+.active-scr { justify-content: center; }
+.cockpit { display: grid; gap: 1.4rem; justify-items: center; }
+.status-ring { position: relative; width: min(74vw, 300px); aspect-ratio: 1; }
+.status-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-bg { fill: none; stroke: #1b2a24; stroke-width: 8; }
+.ring-fg { fill: none; stroke: #36b487; stroke-width: 8; stroke-linecap: round; stroke-dasharray: 339.3; stroke-dashoffset: 0; transition: stroke .2s, stroke-dashoffset .15s linear; }
+.status-ring.warn .ring-fg { stroke: #e3a845; }
+.status-ring.bad .ring-fg { stroke: #ef6b5b; }
+.status-ring.idle .ring-fg { stroke: #4f6359; }
+.status-text { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: .3rem; padding: 18%; }
+.status-text b { font-family: var(--font-display); font-size: clamp(1.25rem, 6vw, 1.7rem); line-height: 1.2; }
+.status-text span { color: #a9b8b2; font-size: .9rem; }
+.dash { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+.dash > div { background: #121f1a; border: 1px solid #1f3029; border-radius: 12px; padding: .7rem; display: grid; justify-items: center; gap: .1rem; }
+.dash .v { font-size: 1.6rem; font-weight: 700; line-height: 1.15; color: #fff; }
+.mini-cam { position: relative; width: 96px; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: #000; border: 1px solid #1f3029; }
+.mini-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.mini-cam .rec { position: absolute; inset-inline: 0; bottom: 0; font-size: .62rem; text-align: center; background: rgba(0,0,0,.6); color: #fff; padding: .15rem; }
+.end-btn { background: transparent; color: #a9b8b2; border-color: #26362f; margin-top: .5rem; }
+
+.flash { position: fixed; inset: 0; background: rgba(192, 57, 43, .88); display: grid; place-items: center; z-index: 80; animation: flashIn .25s ease-out; padding: 24px; text-align: center; }
+.flash b { font-family: var(--font-display); color: #fff; font-size: clamp(2rem, 10vw, 3.2rem); line-height: 1.2; }
+@keyframes flashIn { from { opacity: 0 } to { opacity: 1 } }
+
+.done-mark { width: 72px; height: 72px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
+.done-mark svg { width: 36px; height: 36px; }
+.hist-row { display: flex; justify-content: space-between; gap: 1rem; padding: .6rem 0; border-top: 1px solid var(--line); font-size: .9rem; }

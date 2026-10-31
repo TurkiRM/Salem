@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Salem Panel | لوحة سالم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@500;600&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="rail" id="rail">
+    <a class="brand" href="#overview"><span class="brand-mark" data-icon="logo"></span><span class="brand-name">سالم <small id="companyName">—</small></span></a>
+    <nav class="nav">
+      <a href="#overview" data-view="overview"><span data-icon="live"></span><span data-i18n="nav_overview">المتابعة المباشرة</span></a>
+      <a href="#alerts" data-view="alerts"><span data-icon="alert"></span><span data-i18n="nav_alerts">المخالفات</span><span class="count" id="reviewCount" hidden></span></a>
+      <a href="#drivers" data-view="drivers"><span data-icon="users"></span><span data-i18n="nav_drivers">السائقون</span></a>
+      <a href="#history" data-view="history"><span data-icon="history"></span><span data-i18n="nav_history">سجل الطلبات</span></a>
+      <a href="#settings" data-view="settings"><span data-icon="settings"></span><span data-i18n="nav_settings">الإعدادات</span></a>
+    </nav>
+    <div class="rail-foot">
+      <div class="who"><b id="meName">—</b><span id="meEmail" class="faint"></span></div>
+      <button class="btn sm lang-btn" data-lang-toggle></button>
+      <button class="btn sm" id="logoutBtn" data-i18n="sign_out">خروج</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="main-inner">
+      <div class="row" style="justify-content:space-between">
+        <button class="btn ghost menu-btn" id="menuBtn" aria-label="Menu"><span data-icon="menu" style="width:20px;display:inline-flex"></span></button>
+      </div>
+
+      <!-- OVERVIEW -->
+      <section data-page="overview" class="page">
+        <div class="page-head">
+          <div><h1 data-i18n="nav_overview">المتابعة المباشرة</h1><p data-i18n="overview_sub">السائقون تحت المراقبة الآن، والطلبات بانتظار موافقة السائق.</p></div>
+          <button class="btn primary" data-action="new-request"><span data-icon="send" style="width:18px;display:inline-flex"></span><span data-i18n="send_request">طلب مراقبة</span></button>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div class="panel">
+          <div class="panel-head"><h2 data-i18n="live_sessions">الجلسات الحالية</h2><span class="faint" id="lastUpdate"></span></div>
+          <div id="liveList"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2 data-i18n="latest_alerts">آخر المخالفات</h2><a class="btn sm" href="#alerts" data-i18n="view_all">عرض الكل</a></div>
+          <div id="recentList" class="ev-list"></div>
+        </div>
+      </section>
+
+      <!-- ALERTS -->
+      <section data-page="alerts" class="page" hidden>
+        <div class="page-head">
+          <div><h1 data-i18n="nav_alerts">المخالفات</h1><p data-i18n="alerts_sub">كل مخالفة معها صورة لحظتها والسرعة والموقع. راجعها ثم أكدها أو ارفضها.</p></div>
+          <div class="filters">
+            <select id="fType" aria-label="type"></select>
+            <select id="fReview" aria-label="review"></select>
+            <select id="fDriver" aria-label="driver"></select>
+          </div>
+        </div>
+        <div class="panel"><div id="alertList" class="ev-list"></div></div>
+      </section>
+
+      <!-- DRIVERS -->
+      <section data-page="drivers" class="page" hidden>
+        <div class="page-head">
+          <div><h1 data-i18n="nav_drivers">السائقون</h1><p data-i18n="drivers_sub">أضف سائقيك وأرسل لهم بيانات الدخول. التقييم محسوب من آخر 30 يوماً.</p></div>
+          <button class="btn primary" data-action="new-driver"><span data-icon="plus" style="width:18px;display:inline-flex"></span><span data-i18n="add_driver">إضافة سائق</span></button>
+        </div>
+        <div class="panel"><div class="table-wrap" id="driverTable"></div></div>
+      </section>
+
+      <!-- HISTORY -->
+      <section data-page="history" class="page" hidden>
+        <div class="page-head">
+          <div><h1 data-i18n="nav_history">سجل الطلبات</h1><p data-i18n="history_sub">كل طلبات المراقبة وحالتها وعدد المخالفات في كل جلسة.</p></div>
+        </div>
+        <div class="panel"><div class="table-wrap" id="historyTable"></div></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section data-page="settings" class="page" hidden>
+        <div class="page-head"><div><h1 data-i18n="nav_settings">الإعدادات</h1></div></div>
+        <div class="panel">
+          <div class="panel-head"><h2 data-i18n="detection_rules">قواعد الرصد</h2></div>
+          <form class="panel-body form" id="settingsForm" style="max-width:520px">
+            <label class="field"><span data-i18n="gaze_seconds">مدة النظر للشاشة قبل التسجيل (ثوانٍ)</span><input id="sGaze" type="number" min="1" max="10" step="0.5" dir="ltr"></label>
+            <label class="field"><span data-i18n="min_speed">أقل سرعة تُعتبر فيها السيارة متحركة (كم/س)</span><input id="sSpeed" type="number" min="0" max="60" step="1" dir="ltr"></label>
+            <p class="faint" data-i18n="min_speed_hint">تحت هذه السرعة لا تُسجَّل مخالفات (مثل الوقوف عند الإشارة أو الاصطفاف).</p>
+            <div class="row"><button class="btn primary" type="submit" data-i18n="save">حفظ</button></div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2 data-i18n="driver_access">دخول السائقين</h2></div>
+          <div class="panel-body" style="display:grid;gap:.8rem">
+            <div class="secret">
+              <div class="kv"><span data-i18n="company_code">رمز الشركة</span><b id="sCode">—</b></div>
+              <div class="kv"><span data-i18n="driver_link">رابط السائق</span><span class="mono" id="sLink" dir="ltr"></span></div>
+            </div>
+            <p class="faint" data-i18n="driver_access_hint">يدخل السائق من هذا الرابط برمز الشركة ورقم جواله والرمز السري الذي يظهر عند إضافته.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2 data-i18n="team">فريق الإشراف</h2><button class="btn sm" data-action="new-sup" data-i18n="add_supervisor">إضافة مشرف</button></div>
+          <div class="table-wrap" id="teamTable"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+<script src="/js/i18n.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/panel.js"></script>
+</body>
+</html>

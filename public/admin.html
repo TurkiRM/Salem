@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Salem Admin | إدارة سالم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@500;600&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="rail" id="rail">
+    <a class="brand" href="/admin"><span class="brand-mark" data-icon="logo"></span><span class="brand-name">سالم <small data-i18n="platform_admin">إدارة المنصة</small></span></a>
+    <nav class="nav"><a href="/admin" class="active"><span data-icon="building"></span><span data-i18n="companies">الشركات</span></a></nav>
+    <div class="rail-foot">
+      <div class="who"><b id="meName">—</b><span id="meEmail" class="faint"></span></div>
+      <button class="btn sm lang-btn" data-lang-toggle></button>
+      <button class="btn sm" id="logoutBtn" data-i18n="sign_out">خروج</button>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="main-inner">
+      <button class="btn ghost menu-btn" id="menuBtn" aria-label="Menu" style="justify-self:start"><span data-icon="menu" style="width:20px;display:inline-flex"></span></button>
+      <div class="page-head">
+        <div><h1 data-i18n="companies">الشركات</h1><p data-i18n="companies_sub">كل شركة لها حساب مشرف خاص وسائقون لا يراهم غيرها.</p></div>
+        <button class="btn primary" id="newCompany"><span data-icon="plus" style="width:18px;display:inline-flex"></span><span data-i18n="add_company">إضافة شركة</span></button>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="panel"><div class="table-wrap" id="companyTable"></div></div>
+    </div>
+  </main>
+</div>
+<script src="/js/i18n.js"></script>
+<script src="/js/common.js"></script>
+<script>
+(function () {
+  const S = Salem, $ = s => document.querySelector(s);
+  let companies = [];
+
+  async function boot() {
+    S.applyI18n();
+    try {
+      const me = await S.api('GET', '/api/me');
+      if (me.role !== 'admin') return location.replace(me.role === 'supervisor' ? '/panel' : '/');
+      $('#meName').textContent = me.user.name; $('#meEmail').textContent = me.user.email;
+    } catch (_) { return location.replace('/'); }
+    $('#logoutBtn').onclick = () => S.logout('/');
+    $('#menuBtn').onclick = () => $('#rail').classList.toggle('open');
+    $('#newCompany').onclick = openCompanyModal;
+    S.onLangChange = render;
+    load();
+  }
+
+  async function load() {
+    try { companies = await S.api('GET', '/api/admin/companies'); } catch (_) {}
+    render();
+  }
+
+  function render() {
+    const sum = k => companies.reduce((s, c) => s + c[k], 0);
+    $('#kpis').innerHTML = [['companies', companies.length], ['kpi_drivers', sum('drivers')], ['kpi_active', sum('active_sessions')], ['alerts_30d', sum('events_30d')]]
+      .map(([k, v]) => `<div class="kpi"><span class="label">${S.t(k)}</span><span class="v">${v}</span></div>`).join('');
+    if (!companies.length) {
+      $('#companyTable').innerHTML = `<div class="empty">${S.icons.building}<b>${S.t('no_companies')}</b><span>${S.t('no_companies_hint')}</span></div>`;
+      return;
+    }
+    $('#companyTable').innerHTML = `<table><thead><tr><th>${S.t('company')}</th><th>${S.t('company_code')}</th><th>${S.t('nav_drivers')}</th><th>${S.t('team')}</th><th>${S.t('kpi_active')}</th><th>${S.t('alerts_30d')}</th><th>${S.t('status')}</th><th></th></tr></thead>
+      <tbody>${companies.map(c => `<tr>
+        <td><b>${S.esc(c.name)}</b><span class="sub">${S.t('added')} ${S.fmtDate(c.created_at)}</span></td>
+        <td class="mono">${S.esc(c.code)}</td><td class="num">${c.drivers}</td><td class="num">${c.supervisors}</td>
+        <td class="num">${c.active_sessions}</td><td class="num">${c.events_30d}</td>
+        <td><span class="pill ${c.active ? 'ok' : ''}">${c.active ? S.t('enabled') : S.t('disabled')}</span></td>
+        <td><div class="row" style="gap:.4rem;flex-wrap:nowrap">
+          <button class="btn sm" data-sups="${c.id}">${S.t('team')}</button>
+          <button class="btn sm ghost" data-tog="${c.id}" data-on="${c.active}">${c.active ? S.t('disable') : S.t('enable')}</button></div></td>
+      </tr>`).join('')}</tbody></table>`;
+    document.querySelectorAll('[data-tog]').forEach(b => b.onclick = async () => {
+      await S.api('PATCH', '/api/admin/companies/' + b.dataset.tog, { active: b.dataset.on !== '1' }); load();
+    });
+    document.querySelectorAll('[data-sups]').forEach(b => b.onclick = () => openTeam(companies.find(c => c.id === Number(b.dataset.sups))));
+  }
+
+  function openCompanyModal() {
+    S.modal({
+      title: S.t('add_company'),
+      body: `<form class="form" onsubmit="return false">
+        <label class="field"><span>${S.t('company_name')}</span><input id="cName" placeholder="${S.t('company_ph')}"></label>
+        <p class="label">${S.t('first_supervisor')}</p>
+        <label class="field"><span>${S.t('full_name')}</span><input id="cSup"></label>
+        <label class="field"><span>${S.t('email')}</span><input id="cEmail" type="email" dir="ltr"></label>
+        <label class="field"><span>${S.t('password')}</span><input id="cPass" type="text" dir="ltr" placeholder="${S.t('min8')}"></label>
+        <div class="error-msg" id="cErr"></div></form>`,
+      actions: [{ label: S.t('cancel') }, {
+        label: S.t('add'), kind: 'primary', onClick: async () => {
+          try {
+            const r = await S.api('POST', '/api/admin/companies', { name: $('#cName').value, supervisor_name: $('#cSup').value, supervisor_email: $('#cEmail').value, supervisor_password: $('#cPass').value });
+            S.toast(S.t('company_created', { code: r.code })); load();
+          } catch (e) { $('#cErr').textContent = S.errorText(e); return true; }
+        }
+      }]
+    });
+  }
+
+  async function openTeam(c) {
+    let team = [];
+    try { team = await S.api('GET', `/api/admin/companies/${c.id}/supervisors`); } catch (_) {}
+    const body = document.createElement('div');
+    body.className = 'form';
+    body.innerHTML = `<div class="table-wrap panel"><table><tbody>${team.map(u => `<tr><td>${S.esc(u.name)}</td><td dir="ltr" style="text-align:start">${S.esc(u.email)}</td>
+        <td><button class="btn sm danger" data-del="${u.id}">${S.t('remove')}</button></td></tr>`).join('') || `<tr><td class="muted">—</td></tr>`}</tbody></table></div>
+      <p class="label">${S.t('add_supervisor')}</p>
+      <label class="field"><span>${S.t('full_name')}</span><input id="tName"></label>
+      <label class="field"><span>${S.t('email')}</span><input id="tEmail" type="email" dir="ltr"></label>
+      <label class="field"><span>${S.t('password')}</span><input id="tPass" type="text" dir="ltr" placeholder="${S.t('min8')}"></label>
+      <div class="error-msg" id="tErr"></div>`;
+    const m = S.modal({
+      title: S.t('team') + ' — ' + c.name, body,
+      actions: [{ label: S.t('done') }, {
+        label: S.t('add'), kind: 'primary', onClick: async ({ close }) => {
+          try { await S.api('POST', `/api/admin/companies/${c.id}/supervisors`, { name: $('#tName').value, email: $('#tEmail').value, password: $('#tPass').value }); S.toast(S.t('saved')); close(); load(); openTeam(c); }
+          catch (e) { $('#tErr').textContent = S.errorText(e); return true; }
+        }
+      }]
+    });
+    body.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      await S.api('DELETE', '/api/admin/supervisors/' + b.dataset.del); m.close(); load(); openTeam(c);
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "Salem Driver",
+  "short_name": "Salem",
+  "start_url": "/driver",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1411",
+  "theme_color": "#0b1411",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

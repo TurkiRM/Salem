@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0b1411">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>Salem Driver | سالم للسائق</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@500;600&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/driver.css">
+</head>
+<body class="drv">
+<div class="drv-wrap">
+  <header class="drv-top">
+    <span class="brand"><span class="brand-mark" data-icon="logo"></span><span class="brand-name">سالم <small id="topSub">Salem</small></span></span>
+    <span class="row" style="gap:.4rem"><button class="btn sm lang-btn" data-lang-toggle></button><button class="btn sm" id="logoutBtn" hidden data-i18n="sign_out">خروج</button></span>
+  </header>
+
+  <!-- LOGIN -->
+  <section class="scr" data-scr="login" hidden>
+    <div class="scr-body">
+      <h1 data-i18n="driver_login">دخول السائق</h1>
+      <p class="muted" data-i18n="driver_login_sub">استخدم البيانات التي أرسلها لك المشرف.</p>
+      <form class="form" id="loginForm" novalidate>
+        <label class="field"><span data-i18n="company_code">رمز الشركة</span><input id="lCode" autocomplete="organization" dir="ltr" style="text-transform:uppercase;letter-spacing:.15em" maxlength="6"></label>
+        <label class="field"><span data-i18n="phone">رقم الجوال</span><input id="lPhone" type="tel" autocomplete="tel" dir="ltr" placeholder="05XXXXXXXX"></label>
+        <label class="field"><span data-i18n="pin">الرمز السري</span><input id="lPin" type="password" inputmode="numeric" maxlength="6" dir="ltr" autocomplete="current-password" style="letter-spacing:.3em"></label>
+        <div class="error-msg" id="lErr"></div>
+        <button class="btn primary lg block" type="submit" data-i18n="sign_in">دخول</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- HOME -->
+  <section class="scr" data-scr="home" hidden>
+    <div class="scr-body">
+      <div><span class="label" data-i18n="hello">مرحباً</span><h1 id="hName">—</h1><p class="muted" id="hCompany"></p></div>
+      <div id="hRequests" class="stack"></div>
+      <div id="hHistory"></div>
+    </div>
+  </section>
+
+  <!-- CONSENT -->
+  <section class="scr" data-scr="consent" hidden>
+    <div class="scr-body">
+      <h1 data-i18n="consent_title">قبل أن تبدأ</h1>
+      <div class="req-summary" id="cSummary"></div>
+      <ul class="consent-list">
+        <li><span data-icon="camera"></span><span data-i18n="consent_1">الكاميرا الأمامية تتابع اتجاه عينيك على الجوال فقط. التحليل يتم داخل جوالك.</span></li>
+        <li><span data-icon="eye"></span><span data-i18n="consent_2">إذا نظرت إلى الشاشة لمدة متواصلة أثناء الحركة تُلتقط صورة وتُرسل للمشرف مع السرعة والموقع.</span></li>
+        <li><span data-icon="exit"></span><span data-i18n="consent_3">يجب أن تبقى هذه الصفحة مفتوحة. الخروج منها أثناء الحركة يُسجَّل.</span></li>
+        <li><span data-icon="clock"></span><span data-i18n="consent_4">تنتهي المراقبة تلقائياً بانتهاء المدة المطلوبة.</span></li>
+      </ul>
+      <label class="check"><input type="checkbox" id="cAgree"><span data-i18n="consent_agree">أوافق على المراقبة خلال هذه المدة فقط.</span></label>
+      <div class="error-msg" id="cErr"></div>
+      <div class="stack">
+        <button class="btn primary lg block" id="cStart" disabled data-i18n="consent_start">موافق، جهّز الكاميرا</button>
+        <button class="btn block" id="cBack" data-i18n="back">رجوع</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP / CALIBRATION -->
+  <section class="scr" data-scr="setup" hidden>
+    <div class="scr-body">
+      <h1 id="sTitle" data-i18n="setup_title">تجهيز</h1>
+      <div class="cam-frame"><video id="video" playsinline muted autoplay></video><div class="cam-ring" id="camRing"></div><div class="cam-msg" id="camMsg"></div></div>
+      <div class="calib-step" id="calibStep">
+        <b id="calibText"></b>
+        <div class="bar"><i id="calibBar" style="width:0%"></i></div>
+      </div>
+      <p class="muted" id="setupHint"></p>
+      <div class="error-msg" id="sErr"></div>
+      <div class="stack">
+        <button class="btn primary lg block" id="sGo" hidden></button>
+        <button class="btn block" id="sCancel" data-i18n="cancel">إلغاء</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTIVE -->
+  <section class="scr active-scr" data-scr="active" hidden>
+    <div class="cockpit" id="cockpit">
+      <div class="status-ring" id="statusRing">
+        <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54" class="ring-bg"/><circle cx="60" cy="60" r="54" class="ring-fg" id="ringFg"/></svg>
+        <div class="status-text"><b id="stBig" data-i18n="eyes_on_road">العين على الطريق</b><span id="stSmall"></span></div>
+      </div>
+      <div class="dash">
+        <div><span class="label" data-i18n="speed">السرعة</span><span class="v num" id="aSpeed">0</span><span class="faint" data-i18n="kmh">كم/س</span></div>
+        <div><span class="label" data-i18n="remaining">المتبقي</span><span class="v num" id="aLeft">—</span></div>
+        <div><span class="label" data-i18n="alerts">المخالفات</span><span class="v num" id="aCount">0</span></div>
+      </div>
+      <div class="mini-cam"><video id="miniVideo" playsinline muted autoplay></video><span class="rec" data-i18n="cam_on">الكاميرا تعمل</span></div>
+      <p class="faint center" id="aTest" hidden data-i18n="test_mode_on">وضع التجربة: يتم الرصد حتى بدون حركة.</p>
+      <button class="btn block end-btn" id="aEnd" data-i18n="end_session">إنهاء المراقبة</button>
+    </div>
+  </section>
+
+  <!-- DONE -->
+  <section class="scr" data-scr="done" hidden>
+    <div class="scr-body center-body">
+      <div class="done-mark" data-icon="check"></div>
+      <h1 id="dTitle" data-i18n="session_done">انتهت المراقبة</h1>
+      <p class="muted" id="dText"></p>
+      <button class="btn primary lg block" id="dHome" data-i18n="back_home">الرئيسية</button>
+    </div>
+  </section>
+</div>
+<div class="flash" id="flash" hidden><b data-i18n="look_at_road">انظر إلى الطريق</b></div>
+<script src="/js/i18n.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/driver.js"></script>
+</body>
+</html>

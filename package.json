@@ -1,0 +1,22 @@
+{
+  "name": "salem",
+  "version": "1.0.0",
+  "description": "Salem — stop phone use while driving. Supervisor panel + driver web app with eye-gaze detection.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "fetch-model": "node scripts/fetch-model.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.14",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
