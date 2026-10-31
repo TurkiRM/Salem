@@ -386,12 +386,12 @@
   async function loadSettings() {
     try {
       const s = await S.api('GET', '/api/sup/settings');
-      $('#sGaze').value = s.gaze_seconds; $('#sSpeed').value = s.min_speed_kmh;
+      $('#sGaze').value = s.gaze_seconds; $('#sSpeed').value = s.min_speed_kmh; $('#sFace').value = s.face_lost_seconds;
       $('#sCode').textContent = s.code; $('#sLink').textContent = location.origin + '/driver';
     } catch (_) {}
     $('#settingsForm').onsubmit = async e => {
       e.preventDefault();
-      try { await S.api('PUT', '/api/sup/settings', { gaze_seconds: Number($('#sGaze').value), min_speed_kmh: Number($('#sSpeed').value) }); S.toast(S.t('saved')); }
+      try { await S.api('PUT', '/api/sup/settings', { gaze_seconds: Number($('#sGaze').value), min_speed_kmh: Number($('#sSpeed').value), face_lost_seconds: Number($('#sFace').value) }); S.toast(S.t('saved')); }
       catch (x) { S.toast(S.errorText(x), 'bad'); }
     };
     let team = [];

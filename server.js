@@ -130,6 +130,12 @@ CREATE INDEX IF NOT EXISTS idx_ev_company ON events(company_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ev_request ON events(request_id);
 `);
 
+/* Migrations for databases created by earlier versions */
+(function migrate() {
+  const cols = db.prepare('PRAGMA table_info(companies)').all().map(c => c.name);
+  if (!cols.includes('face_lost_seconds')) db.exec('ALTER TABLE companies ADD COLUMN face_lost_seconds REAL NOT NULL DEFAULT 8');
+})();
+
 const now = () => Date.now();
 const EVENT_TYPES = ['gaze', 'left_screen', 'face_lost', 'ended_early'];
 const EVENT_WEIGHT = { gaze: 1, left_screen: 0.6, face_lost: 0.3, ended_early: 0.5 };
@@ -279,7 +285,7 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/me', auth(), wrap((req, res) => {
   const { id, role, company_id } = req.auth;
-  const company = company_id ? db.prepare('SELECT id, name, code, min_speed_kmh, gaze_seconds FROM companies WHERE id = ?').get(company_id) : null;
+  const company = company_id ? db.prepare('SELECT id, name, code, min_speed_kmh, gaze_seconds, face_lost_seconds FROM companies WHERE id = ?').get(company_id) : null;
   if (role === 'driver') {
     const d = db.prepare('SELECT id, name, phone, vehicle FROM drivers WHERE id = ?').get(id);
     if (!d) return res.status(401).json({ error: 'not_signed_in' });
@@ -365,7 +371,7 @@ function liveRow(r) {
 sup.get('/overview', wrap((req, res) => {
   maintain();
   const cid = req.auth.company_id;
-  const company = db.prepare('SELECT id, name, code, min_speed_kmh, gaze_seconds FROM companies WHERE id = ?').get(cid);
+  const company = db.prepare('SELECT id, name, code, min_speed_kmh, gaze_seconds, face_lost_seconds FROM companies WHERE id = ?').get(cid);
   const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
   const live = db.prepare(`SELECT r.*, d.name AS driver_name, d.phone AS driver_phone, d.vehicle AS driver_vehicle,
       (SELECT COUNT(*) FROM events e WHERE e.request_id = r.id) AS event_count
@@ -480,15 +486,16 @@ sup.patch('/events/:id', wrap((req, res) => {
 }));
 
 sup.get('/settings', wrap((req, res) => {
-  res.json(db.prepare('SELECT name, code, min_speed_kmh, gaze_seconds FROM companies WHERE id = ?').get(req.auth.company_id));
+  res.json(db.prepare('SELECT name, code, min_speed_kmh, gaze_seconds, face_lost_seconds FROM companies WHERE id = ?').get(req.auth.company_id));
 }));
 
 sup.put('/settings', wrap((req, res) => {
-  const { min_speed_kmh, gaze_seconds } = parseBody(req);
+  const { min_speed_kmh, gaze_seconds, face_lost_seconds } = parseBody(req);
   const s = Math.min(60, Math.max(0, Number(min_speed_kmh)));
   const g = Math.min(10, Math.max(1, Number(gaze_seconds)));
-  if (Number.isNaN(s) || Number.isNaN(g)) return res.status(400).json({ error: 'bad_values' });
-  db.prepare('UPDATE companies SET min_speed_kmh = ?, gaze_seconds = ? WHERE id = ?').run(s, g, req.auth.company_id);
+  const f = Math.min(120, Math.max(3, Number(face_lost_seconds)));
+  if (Number.isNaN(s) || Number.isNaN(g) || Number.isNaN(f)) return res.status(400).json({ error: 'bad_values' });
+  db.prepare('UPDATE companies SET min_speed_kmh = ?, gaze_seconds = ?, face_lost_seconds = ? WHERE id = ?').run(s, g, f, req.auth.company_id);
   res.json({ ok: true });
 }));
 
@@ -531,7 +538,7 @@ drv.get('/state', wrap((req, res) => {
   maintain();
   const d = db.prepare('SELECT id, name, phone, vehicle, active FROM drivers WHERE id = ?').get(req.auth.id);
   if (!d || !d.active) return res.status(401).json({ error: 'not_signed_in' });
-  const company = db.prepare('SELECT name, min_speed_kmh, gaze_seconds FROM companies WHERE id = ?').get(req.auth.company_id);
+  const company = db.prepare('SELECT name, min_speed_kmh, gaze_seconds, face_lost_seconds FROM companies WHERE id = ?').get(req.auth.company_id);
   const pending = db.prepare(`SELECT r.id, r.duration_min, r.note, r.test_mode, r.created_at, u.name AS supervisor_name
     FROM requests r LEFT JOIN users u ON u.id = r.supervisor_id WHERE r.driver_id = ? AND r.status = 'pending' ORDER BY r.created_at DESC`).all(d.id);
   const active = db.prepare("SELECT id, duration_min, note, test_mode, started_at, ends_at FROM requests WHERE driver_id = ? AND status = 'active'").get(d.id) || null;

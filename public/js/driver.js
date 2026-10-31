@@ -195,13 +195,29 @@
     buzz([80, 80, 80]);
     await countdown(S.t('calib_now_road'), 2);
     const road = await collect(3000, S.t('calib_look_road'));
+    buzz([80, 80, 80]);
+    // Step 3: head stays on the road, only the eyes move to the phone (the sneaky glance)
+    $('#setupHint').textContent = S.t('calib_glance_hint');
+    await countdown(S.t('calib_now_glance'), 3);
+    const glance = await collect(3000, S.t('calib_look_glance'));
     buzz(150);
-    const res = st.detector.calibrate(screen, road);
+    $('#sAlt').hidden = true;
+    const res = st.detector.calibrate(screen, road, glance);
     if (!res.ok) {
       setCalib(S.t('calib_failed'), 0);
       $('#setupHint').textContent = S.t('calib_failed_hint');
       $('#sGo').textContent = S.t('try_again'); $('#sGo').hidden = false;
       $('#sGo').onclick = () => { $('#sGo').hidden = true; runCalibration(); };
+      return;
+    }
+    if (!res.glanceOk) {
+      // Normal looks work, but the eyes-only glance could not be told apart from the road
+      setCalib(S.t('calib_partial'), 70);
+      $('#setupHint').textContent = S.t('calib_partial_hint');
+      $('#sGo').textContent = S.t('try_again'); $('#sGo').hidden = false;
+      $('#sGo').onclick = () => { $('#sGo').hidden = true; $('#sAlt').hidden = true; runCalibration(); };
+      $('#sAlt').textContent = S.t('continue_anyway'); $('#sAlt').hidden = false;
+      $('#sAlt').onclick = () => { $('#sAlt').hidden = true; beginSession(); };
       return;
     }
     setCalib(S.t('calib_ok'), 100);
@@ -275,7 +291,7 @@
       st.faceLostStart = null;
     } else {
       if (!st.faceLostStart) st.faceLostStart = now;
-      if (isMoving && !st.faceEvent && now - st.faceLostStart >= 8000) {
+      if (isMoving && !st.faceEvent && now - st.faceLostStart >= (st.company.face_lost_seconds || 8) * 1000) {
         const ev = (st.faceEvent = { id: null, start: st.faceLostStart, pending: true });
         openEvent('face_lost', st.faceLostStart, {}).then(id => { ev.id = id; ev.pending = false; });
       }

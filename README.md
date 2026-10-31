@@ -22,7 +22,7 @@ Each company sees only its own drivers and violations.
 |---|---|
 | **Looked at screen** | Eyes on the screen for at least `gaze_seconds` (default 3 s) while speed is at or above `min_speed_kmh` (default 10 km/h). Photo, speed, GPS. If the pupils sweep left-right (reading or typing) it is tagged **Reading/typing pattern**. |
 | **Left Salem** | The driver switched to another app (WhatsApp, YouTube…) for 3 s or more while moving. Logged with how long they were away. The panel shows "Left the app" live. |
-| **Face not visible** | No face in the camera for 8 s while moving (camera covered, or phone turned away). |
+| **Face not visible** | No face in the camera for `face_lost_seconds` (default 8 s, set by the supervisor) while moving (camera covered, or phone turned away). |
 | **Ended monitoring early** | The driver stopped the session before the time was up. |
 | **Connection lost** (live status) | No signal from the phone for 45 s, for example because the browser was closed. |
 
@@ -31,7 +31,12 @@ Supervisors confirm or dismiss each violation. Dismissed ones don't count toward
 ## How eye detection works
 
 - Google **MediaPipe Face Landmarker** runs inside the phone's browser. It finds 478 face points, including both pupils, and the head angle.
-- **Calibration** (6 seconds, at the start of every session): the driver looks at the screen for 3 s, then at the road for 3 s, with the phone in its real mount. Salem learns what "looking at the screen" and "looking at the road" look like from that exact position. If the two look too similar (for example, the phone is straight in front of the eyes), it asks the driver to move the phone and try again.
+- **Calibration** (9 seconds, at the start of every session), with the phone in its real mount:
+  1. look at the screen normally (3 s)
+  2. look at the road (3 s)
+  3. keep the head facing the road and move **only the eyes** to the screen (3 s), the way someone sneaks a look at their phone
+  If steps 1 and 2 look too similar (phone straight in front of the eyes), Salem asks the driver to move the phone and try again. If only step 3 can't be told apart, the driver can retry or continue without it.
+- Eye direction counts twice as much as head direction, so a driver who keeps the head on the road but reads with the eyes is still caught. Salem combines the pupil position inside each eye with the model's own eye-direction estimate.
 - After that, every frame (about 15 per second) is classified as screen or road. A blink doesn't reset the 3-second timer.
 - Video never leaves the phone. Only the violation photo is uploaded.
 - While the car is stopped (below the minimum speed), nothing is recorded.
@@ -82,7 +87,7 @@ Tip for drivers: from the browser menu choose **Add to Home screen**, so Salem o
 | `REQUEST_EXPIRY_MIN` | 15 | Minutes a driver has to accept before the request expires |
 | `COOKIE_SECURE` | false | Set to `true` behind HTTPS |
 
-Per-company settings (in the panel under **Settings**): seconds before recording, and the minimum speed that counts as moving.
+Per-company settings (in the panel under **Settings**): seconds looking at the screen before recording, the minimum speed that counts as moving, and seconds the face can be hidden before recording.
 
 ## Limits to know
 
