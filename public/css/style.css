@@ -277,3 +277,6 @@ td .sub { display: block; font-size: .8rem; color: var(--ink-3); }
 }
 
 .page { display: grid; gap: 1.5rem; min-width: 0; width: 100%; }
+
+.sun-note { font-size: .82rem; font-weight: 600; padding: .35rem .6rem; border-radius: 6px; background: var(--info-soft); color: var(--info); }
+.sun-note.limited { background: var(--warn-soft); color: var(--warn); }

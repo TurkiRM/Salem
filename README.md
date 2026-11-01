@@ -37,6 +37,10 @@ Supervisors confirm or dismiss each violation. Dismissed ones don't count toward
   3. keep the head facing the road and move **only the eyes** to the screen (3 s), the way someone sneaks a look at their phone
   If steps 1 and 2 look too similar (phone straight in front of the eyes), Salem asks the driver to move the phone and try again. If only step 3 can't be told apart, the driver can retry or continue without it.
 - Eye direction counts twice as much as head direction, so a driver who keeps the head on the road but reads with the eyes is still caught. Salem combines the pupil position inside each eye with the model's own eye-direction estimate.
+- **Sunglasses.** Dark lenses hide the pupils, and the eye model then only guesses. About once a second Salem compares the eye area with the cheeks and forehead. When it's dark and shows no white of the eye, Salem switches to **head-direction mode**: eye readings are ignored, and a violation needs the head to turn toward the phone for the set seconds. It switches back automatically when the sunglasses come off.
+  - Calibration with sunglasses on uses steps 1 and 2 only. If the phone sits straight in front of the eyes, head direction can't tell screen from road, so the driver is asked to move it lower or to the side.
+  - Eyes-only looks can't be detected with dark sunglasses. That's a limit of any normal phone camera.
+  - The supervisor sees "Sunglasses — head direction only" on the live card, a "Sunglasses · head direction" tag on each such violation, and the minutes monitored this way in Request history.
 - After that, every frame (about 15 per second) is classified as screen or road. A blink doesn't reset the 3-second timer.
 - Video never leaves the phone. Only the violation photo is uploaded.
 - While the car is stopped (below the minimum speed), nothing is recorded.

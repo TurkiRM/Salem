@@ -56,3 +56,6 @@ body.drv { background: #0b1411; color: #e4ece8; min-height: 100%; }
 .done-mark { width: 72px; height: 72px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
 .done-mark svg { width: 36px; height: 36px; }
 .hist-row { display: flex; justify-content: space-between; gap: 1rem; padding: .6rem 0; border-top: 1px solid var(--line); font-size: .9rem; }
+
+.mode-badge { margin: 0; padding: .45rem .9rem; border-radius: 999px; font-size: .88rem; font-weight: 600; text-align: center; background: #14303f; color: #8fc9ea; }
+.mode-badge.none { background: #3a2d14; color: #e3a845; }

@@ -134,6 +134,10 @@ CREATE INDEX IF NOT EXISTS idx_ev_request ON events(request_id);
 (function migrate() {
   const cols = db.prepare('PRAGMA table_info(companies)').all().map(c => c.name);
   if (!cols.includes('face_lost_seconds')) db.exec('ALTER TABLE companies ADD COLUMN face_lost_seconds REAL NOT NULL DEFAULT 8');
+  const rcols = db.prepare('PRAGMA table_info(requests)').all().map(c => c.name);
+  if (!rcols.includes('sunglasses')) db.exec('ALTER TABLE requests ADD COLUMN sunglasses INTEGER NOT NULL DEFAULT 0');       // sunglasses on right now
+  if (!rcols.includes('sunglasses_ms')) db.exec('ALTER TABLE requests ADD COLUMN sunglasses_ms INTEGER NOT NULL DEFAULT 0'); // time monitored by head direction only
+  if (!rcols.includes('detect_mode')) db.exec("ALTER TABLE requests ADD COLUMN detect_mode TEXT DEFAULT 'eyes'");
 })();
 
 const now = () => Date.now();
@@ -583,8 +587,14 @@ drv.post('/heartbeat', wrap((req, res) => {
   const r = db.prepare('SELECT * FROM requests WHERE id = ? AND driver_id = ?').get(b.request_id, req.auth.id);
   if (!r) return res.status(404).json({ error: 'not_found' });
   if (r.status === 'active') {
-    db.prepare('UPDATE requests SET last_seen_at = ?, last_lat = ?, last_lng = ?, last_speed = ?, last_state = ?, face_visible = ? WHERE id = ?')
-      .run(now(), num(b.lat), num(b.lng), num(b.speed), String(b.state || '').slice(0, 20), b.face_visible ? 1 : 0, r.id);
+    const t = now();
+    const sun = b.sunglasses ? 1 : 0;
+    // Count time with sunglasses on: the gap since the last signal, if sunglasses were on then too (max 30 s per gap)
+    const addSun = sun && r.sunglasses && r.last_seen_at ? Math.min(30000, Math.max(0, t - r.last_seen_at)) : 0;
+    const mode = ['eyes', 'head', 'none'].includes(b.mode) ? b.mode : 'eyes';
+    db.prepare(`UPDATE requests SET last_seen_at = ?, last_lat = ?, last_lng = ?, last_speed = ?, last_state = ?, face_visible = ?,
+        sunglasses = ?, sunglasses_ms = sunglasses_ms + ?, detect_mode = ? WHERE id = ?`)
+      .run(t, num(b.lat), num(b.lng), num(b.speed), String(b.state || '').slice(0, 20), b.face_visible ? 1 : 0, sun, addSun, mode, r.id);
   }
   res.json({ status: r.status, ends_at: r.ends_at, server_time: now() });
 }));

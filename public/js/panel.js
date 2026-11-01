@@ -107,6 +107,7 @@
     return `<div class="live-card ${lost ? 's-lost' : 's-live'}">
       <div class="top"><div class="who"><b>${S.esc(r.driver_name)}</b><span class="faint">${S.esc(r.driver_vehicle || r.driver_phone)}</span></div>
       <span class="pill ${pill} ${lost ? '' : 'live'}">${S.t(stateKey)}</span></div>
+      ${!lost && r.sunglasses ? `<div class="sun-note ${r.detect_mode === 'none' ? 'limited' : ''}">${S.t(r.detect_mode === 'none' ? 'mode_none_sup' : 'mode_head_sup')}</div>` : ''}
       <div class="meta">
         <div><span class="label">${S.t('speed')}</span><span class="v">${speed}<small class="faint"> ${S.t('kmh')}</small></span></div>
         <div><span class="label">${S.t('alerts')}</span><span class="v" style="color:${r.event_count ? 'var(--bad)' : 'inherit'}">${r.event_count}</span></div>
@@ -151,6 +152,7 @@
       e.duration_ms ? `<span>${S.t('lasted')} <b class="num">${S.fmtDur(e.duration_ms)}</b></span>` : '',
       e.speed_kmh != null ? `<span>${S.t('speed')} <b class="num">${Math.round(e.speed_kmh)}</b> ${S.t('kmh')}</span>` : '',
       det.reading ? `<span class="pill bad" style="font-size:.72rem">${S.t('reading_pattern')}</span>` : '',
+      det.sunglasses ? `<span class="pill info" style="font-size:.72rem">${S.t('tag_sunglasses')}</span>` : '',
       map ? `<a href="${map}" target="_blank" rel="noopener">${S.t('map')}</a>` : ''
     ].join('');
     return `<div class="ev ${compact ? 'compact' : ''}" data-ev="${e.id}">
@@ -190,7 +192,8 @@
       [S.t('lasted'), e.duration_ms ? S.fmtDur(e.duration_ms) : '—'],
       [S.t('speed'), e.speed_kmh != null ? Math.round(e.speed_kmh) + ' ' + S.t('kmh') : '—'],
       [S.t('location'), map ? `<a href="${map}" target="_blank" rel="noopener">${Number(e.lat).toFixed(5)}, ${Number(e.lng).toFixed(5)}</a>` : '—'],
-      det.reading != null ? [S.t('eye_pattern'), det.reading ? S.t('reading_pattern') + ` (${det.saccades || 0} ${S.t('saccades')})` : S.t('steady_look')] : null,
+      e.type === 'gaze' ? [S.t('detected_by'), det.sunglasses ? S.t('by_head') : S.t('by_eyes')] : null,
+      det.reading != null && !det.sunglasses ? [S.t('eye_pattern'), det.reading ? S.t('reading_pattern') + ` (${det.saccades || 0} ${S.t('saccades')})` : S.t('steady_look')] : null,
       det.minutes_left != null ? [S.t('minutes_left'), det.minutes_left] : null
     ].filter(Boolean);
     const body = `<div class="lightbox">${e.snapshot ? `<img src="/snapshots/${S.esc(e.snapshot)}" alt="">` : `<div class="empty">${S.icons[(S.EVENT_META[e.type] || {}).icon || 'alert']}<span>${S.t('no_photo')}</span></div>`}</div>
@@ -369,7 +372,7 @@
       <tbody>${list.map(r => `<tr>
         <td><b>${S.esc(r.driver_name)}</b>${r.test_mode ? `<span class="sub">${S.t('test_mode_short')}</span>` : ''}</td>
         <td><span class="pill ${S.STATUS_PILL[r.status] || ''}">${S.t('st_' + r.status)}</span></td>
-        <td>${S.durationLabel(r.duration_min)}</td>
+        <td>${S.durationLabel(r.duration_min)}${r.sunglasses_ms >= 60000 ? `<span class="sub">${S.t('sun_minutes', { n: Math.round(r.sunglasses_ms / 60000) })}</span>` : ''}</td>
         <td>${r.started_at ? S.fmtDateTime(r.started_at) : `<span class="faint">${S.t('sent')} ${S.fmtDateTime(r.created_at)}</span>`}</td>
         <td class="num">${r.gaze_count}</td>
         <td class="num">${r.event_count ? `<button class="btn sm" data-hs="${r.id}">${r.event_count}</button>` : 0}</td>

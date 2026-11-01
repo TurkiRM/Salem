@@ -189,6 +189,8 @@
   async function runCalibration() {
     $('#sTitle').textContent = S.t('calib_title');
     $('#setupHint').textContent = S.t('calib_mount');
+    $('#sAlt').hidden = true;
+    st.detector.resetLenses();
     await countdown(S.t('calib_get_ready'), 3);
     buzz(80);
     const screen = await collect(3000, S.t('calib_look_screen'));
@@ -196,12 +198,31 @@
     await countdown(S.t('calib_now_road'), 2);
     const road = await collect(3000, S.t('calib_look_road'));
     buzz([80, 80, 80]);
+
+    // Sunglasses seen during the first two steps: eyes can't be measured, calibrate head direction only
+    if (st.detector.sunglasses) {
+      buzz(150);
+      const res = st.detector.calibrate(screen, road, null, true);
+      if (!res.ok) {
+        setCalib(S.t('calib_failed'), 0);
+        $('#setupHint').textContent = S.t('calib_sun_failed_hint');
+        $('#sGo').textContent = S.t('try_again'); $('#sGo').hidden = false;
+        $('#sGo').onclick = () => { $('#sGo').hidden = true; runCalibration(); };
+        return;
+      }
+      setCalib(S.t('calib_ok'), 100);
+      $('#setupHint').textContent = S.t('calib_sun_ok');
+      $('#sGo').textContent = st.resume ? S.t('resume') : S.t('start_watch');
+      $('#sGo').hidden = false;
+      $('#sGo').onclick = beginSession;
+      return;
+    }
+
     // Step 3: head stays on the road, only the eyes move to the phone (the sneaky glance)
     $('#setupHint').textContent = S.t('calib_glance_hint');
     await countdown(S.t('calib_now_glance'), 3);
     const glance = await collect(3000, S.t('calib_look_glance'));
     buzz(150);
-    $('#sAlt').hidden = true;
     const res = st.detector.calibrate(screen, road, glance);
     if (!res.ok) {
       setCalib(S.t('calib_failed'), 0);
@@ -253,7 +274,7 @@
       return;
     }
     $('#sGo').disabled = false;
-    st.eventCount = 0; st.ending = false;
+    st.eventCount = 0; st.ending = false; st.mode = null;
     $('#aCount').textContent = '0';
     $('#aTest').hidden = !st.request.test_mode;
     show('active');
@@ -285,6 +306,11 @@
     const isMoving = moving();
     let onScreen = false;
 
+    // Detection mode: 'eyes' (normal), 'head' (sunglasses), 'none' (sunglasses, head can't tell)
+    const mode = r.face ? st.detector.mode() : (st.mode || 'eyes');
+    if (st.mode && mode !== st.mode && !st.gazeEvent) { st.gazeStart = null; st.offScreenSince = null; }
+    st.mode = mode;
+
     if (r.face) {
       onScreen = st.detector.isOnScreen(r.f);
       if (st.faceLostStart) { closeFaceEvent(now); }
@@ -309,8 +335,8 @@
     const dwell = st.gazeStart ? now - st.gazeStart : 0;
     if (st.gazeStart && dwell >= gazeMs && !st.gazeEvent) {
       st.gazeEvent = { id: null, start: st.gazeStart, pending: true };
-      const pat = st.detector.readingPattern(now, gazeMs);
-      openEvent('gaze', st.gazeStart, { reading: pat.reading, saccades: pat.saccades, threshold_s: gazeMs / 1000 })
+      const pat = mode === 'eyes' ? st.detector.readingPattern(now, gazeMs) : { reading: false, saccades: 0 };
+      openEvent('gaze', st.gazeStart, { reading: pat.reading, saccades: pat.saccades, threshold_s: gazeMs / 1000, sunglasses: mode !== 'eyes', mode })
         .then(id => { if (st.gazeEvent) { st.gazeEvent.id = id; st.gazeEvent.pending = false; } });
     }
     if (st.gazeEvent && now - st.lastBeep > 1200) { beep(); buzz(250); st.lastBeep = now; }
@@ -328,6 +354,9 @@
     const key = cls + big + small;
     if (key !== lastUi) { $('#stBig').textContent = big; $('#stSmall').textContent = small; lastUi = key; }
     $('#flash').hidden = !st.gazeEvent;
+    const badge = $('#aMode');
+    badge.hidden = mode === 'eyes';
+    if (mode !== 'eyes') { badge.textContent = S.t(mode === 'head' ? 'mode_head_driver' : 'mode_none_driver'); badge.className = 'mode-badge ' + mode; }
     st.uiState = !isMoving ? 'parked' : !r.face ? 'no_face' : 'watching';
     st.faceVisible = r.face;
   }
@@ -366,7 +395,7 @@
     // wait briefly if the create call is still in flight
     for (let i = 0; i < 20 && ev.pending; i++) await new Promise(r => setTimeout(r, 150));
     if (!ev.id) return;
-    const pat = st.detector.readingPattern(now, Math.min(6000, now - ev.start));
+    const pat = st.mode === 'eyes' ? st.detector.readingPattern(now, Math.min(6000, now - ev.start)) : { reading: false, saccades: 0 };
     S.api('PATCH', `/api/driver/events/${ev.id}`, { duration_ms: now - ev.start, details: { reading: pat.reading, saccades: pat.saccades } }).catch(() => {});
   }
 
@@ -383,7 +412,8 @@
     try {
       const r = await S.api('POST', '/api/driver/heartbeat', {
         request_id: st.request.id, lat: st.pos.lat, lng: st.pos.lng, speed: st.pos.speed,
-        state: st.uiState || 'watching', face_visible: !!st.faceVisible
+        state: st.uiState || 'watching', face_visible: !!st.faceVisible,
+        sunglasses: st.mode === 'head' || st.mode === 'none', mode: st.mode || 'eyes'
       });
       st.serverSkew = Date.now() - r.server_time;
       if (r.ends_at) st.request.ends_at = r.ends_at;
