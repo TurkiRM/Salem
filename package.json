@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "fetch-model": "node scripts/fetch-model.js"
+    "fetch-model": "node scripts/fetch-model.js",
+    "import-sqlite": "node --disable-warning=ExperimentalWarning scripts/import-sqlite.js"
   },
   "engines": {
     "node": ">=22.13"
@@ -17,6 +18,7 @@
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "pg": "8.13.1"
   }
 }

@@ -49,14 +49,38 @@ Supervisors confirm or dismiss each violation. Dismissed ones don't count toward
 
 ## Run it
 
-Requirements: **Node.js 22.13 or newer** (Node 24 recommended). The database is Node's built-in SQLite, so nothing needs compiling on Windows, Mac or Linux.
+Requirements: **Node.js 22.13 or newer** (Node 24 recommended) and a **PostgreSQL** database. Nothing needs compiling on Windows, Mac or Linux.
+
+### 1. Create the database
+
+Any hosted Postgres works. Create a database and copy its **connection string** (it starts with `postgres://` or `postgresql://`):
+
+- **Neon** (neon.tech): free tier, doesn't expire. Create a project → copy the connection string from the dashboard.
+- **Supabase** (supabase.com): Project settings → Database → Connection string. Free projects pause after a period of no use, so check their current terms.
+- **Render Postgres**: in the same Render account as the web service. Use the **Internal Database URL** for the web service. Free Render databases are deleted after a trial period, so use a paid plan for real customers (check Render's current terms).
+
+Salem creates all its tables by itself on first start. Companies, drivers, sessions, violations **and the violation photos** are all stored in this database, so redeploying or restarting the server loses nothing. You don't need a disk on Render any more.
+
+### 2. Run
 
 ```bash
 npm install
-cp .env.example .env        # then edit .env: set JWT_SECRET and the admin password
+cp .env.example .env        # then edit .env: DATABASE_URL, JWT_SECRET, admin password
 npm run fetch-model         # optional: serve the eye model from your own server (3.6 MB)
 npm start
 ```
+
+### Moving data from the old SQLite version (optional)
+
+If you have test data in the old `data/salem.db`, copy it once into the new Postgres database (it must still be empty):
+
+```bash
+npm start                   # once, so the tables are created; then stop it (Ctrl+C)
+npm run import-sqlite       # or: npm run import-sqlite -- D:\path\to\old\data
+npm start
+```
+
+It copies companies, supervisors (with their passwords), drivers (with their PINs), requests, violations and photos, and it stops without changing anything if the database already has companies.
 
 Open `http://localhost:3000` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
 
@@ -64,7 +88,7 @@ Open `http://localhost:3000` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` f
 
 Phones only allow the camera on **https** pages. Any of these works:
 
-- **Render / Railway**: create a Node web service from this folder, start command `npm start`, add the `.env` values as environment variables, set `COOKIE_SECURE=true`, and add a **persistent disk** mounted at `DATA_DIR` (the database and photos live there).
+- **Render / Railway**: create a Node web service from this folder. Build command `npm install && npm run fetch-model`, start command `npm start`, health check path `/healthz`. Add the `.env` values as environment variables (including `DATABASE_URL`) and set `COOKIE_SECURE=true`.
 - **Your own VPS**: run with `pm2 start server.js --name salem`, put Nginx in front with a Let's Encrypt certificate, and set `COOKIE_SECURE=true`.
 
 ### First steps after deploying
@@ -86,7 +110,9 @@ Tip for drivers: from the browser menu choose **Add to Home screen**, so Salem o
 | `PORT` | 3000 | Server port |
 | `JWT_SECRET` | — | Long random string that signs sign-in cookies. **Change it.** |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | — | Platform owner account, created on first start |
-| `DATA_DIR` | `./data` | SQLite database and photos |
+| `DATABASE_URL` | — | **Required.** Postgres connection string |
+| `DATABASE_SSL` | auto | SSL is on for hosted databases and off for localhost and Render's internal URL. Set `true` or `false` to force it. |
+| `DATABASE_POOL` | 10 | Maximum database connections |
 | `SNAPSHOT_RETENTION_DAYS` | 30 | Photos older than this are deleted automatically (0 = keep) |
 | `REQUEST_EXPIRY_MIN` | 15 | Minutes a driver has to accept before the request expires |
 | `COOKIE_SECURE` | false | Set to `true` behind HTTPS |
@@ -104,8 +130,9 @@ Per-company settings (in the panel under **Settings**): seconds looking at the s
 ## Files
 
 ```
-server.js                 API, auth, database (SQLite), photo storage
+server.js                 API, auth, PostgreSQL database, photo storage
 scripts/fetch-model.js    downloads the MediaPipe face model to public/models
+scripts/import-sqlite.js  one-time copy of data from the old SQLite version
 public/index.html         sign-in for admin and supervisors
 public/admin.html         platform admin (companies)
 public/panel.html         supervisor panel  (+ js/panel.js)
