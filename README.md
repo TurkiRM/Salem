@@ -10,7 +10,8 @@ A web platform that stops drivers from using their phone while driving. A superv
 
 | Address | Who | What they do |
 |---|---|---|
-| `/` → `/admin` | You (platform owner) | Create companies and their supervisor accounts, enable or disable a company |
+| `/register` | New companies | Register themselves: company details (CR number, city, fleet size) and the first supervisor account. They wait for your approval. |
+| `/` → `/admin` | You (platform owner) | Approve or reject registration requests, add companies yourself, enable or disable a company, reset a supervisor's password |
 | `/` → `/panel` | Company supervisors | Add drivers, send monitoring requests, watch live sessions, review violations with photos, scores, settings |
 | `/driver` | Drivers (on their phone) | Sign in with company code + phone + PIN, accept or decline requests, run the monitored session |
 
@@ -56,7 +57,7 @@ Requirements: **Node.js 22.13 or newer** (Node 24 recommended) and a **PostgreSQ
 Any hosted Postgres works. Create a database and copy its **connection string** (it starts with `postgres://` or `postgresql://`):
 
 - **Neon** (neon.tech): free tier, doesn't expire. Create a project → copy the connection string from the dashboard.
-- **Supabase** (supabase.com): Project settings → Database → Connection string. Free projects pause after a period of no use, so check their current terms.
+- **Supabase** (supabase.com): **Connect** → copy the **Session pooler** connection string (Render can't reach Supabase's direct connection). Free projects pause after a period of no use, so check their current terms. Salem turns on row level security for all its tables, so Supabase's automatic web API can't read them; only Salem's server can.
 - **Render Postgres**: in the same Render account as the web service. Use the **Internal Database URL** for the web service. Free Render databases are deleted after a trial period, so use a paid plan for real customers (check Render's current terms).
 
 Salem creates all its tables by itself on first start. Companies, drivers, sessions, violations **and the violation photos** are all stored in this database, so redeploying or restarting the server loses nothing. You don't need a disk on Render any more.
@@ -93,7 +94,11 @@ Phones only allow the camera on **https** pages. Any of these works:
 
 ### First steps after deploying
 
-1. Sign in as admin → **Add company** (company name + first supervisor email and password). You get a 6-letter **company code**.
+1. Add a company, either way:
+   - The company opens `/register` (also linked from the sign-in page) and sends its details. It appears under **Registration requests** in your admin dashboard. **Approve** activates it; **Reject** blocks sign-in (you can approve it later from the companies list). Until then, its supervisor sees "Your company registration is being reviewed".
+   - Or sign in as admin → **Add company** (company name + first supervisor email and password). It's active at once.
+
+   Every company gets a 6-letter **company code** for its drivers.
 2. Sign in as that supervisor → **Drivers → Add driver**. A 6-digit PIN appears once. Tap **Copy message** and send it to the driver on WhatsApp.
 3. **Request monitoring** → pick the driver and the duration. For a desk test, tick **Test mode** so it detects without the car moving.
 4. On the phone: open `/driver`, sign in, **Accept** → consent → calibrate → monitoring starts.
@@ -117,7 +122,9 @@ Tip for drivers: from the browser menu choose **Add to Home screen**, so Salem o
 | `REQUEST_EXPIRY_MIN` | 15 | Minutes a driver has to accept before the request expires |
 | `COOKIE_SECURE` | false | Set to `true` behind HTTPS |
 
-Per-company settings (in the panel under **Settings**): seconds looking at the screen before recording, the minimum speed that counts as moving, and seconds the face can be hidden before recording.
+**Passwords:** supervisors change their own password in **Settings → Change password**; you change yours from the admin sidebar. If a supervisor forgets theirs, open the company in the admin dashboard → **Details** → **New password** and send them the temporary password shown.
+
+Per-company settings (in the panel under **Settings**): seconds looking at the screen before recording, the minimum speed that counts as moving, and seconds the face can be hidden before recording (any number; 0 turns it off).
 
 ## Limits to know
 
@@ -134,7 +141,8 @@ server.js                 API, auth, PostgreSQL database, photo storage
 scripts/fetch-model.js    downloads the MediaPipe face model to public/models
 scripts/import-sqlite.js  one-time copy of data from the old SQLite version
 public/index.html         sign-in for admin and supervisors
-public/admin.html         platform admin (companies)
+public/register.html      company self-registration
+public/admin.html         platform admin (registration requests, companies, supervisors)
 public/panel.html         supervisor panel  (+ js/panel.js)
 public/driver.html        driver phone screen (+ js/driver.js, css/driver.css)
 public/js/gaze.js         eye-gaze detector (MediaPipe + calibration + reading pattern)

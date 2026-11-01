@@ -163,6 +163,30 @@ CREATE INDEX IF NOT EXISTS idx_ev_company ON events(company_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ev_request ON events(request_id);
 CREATE INDEX IF NOT EXISTS idx_ev_driver ON events(driver_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_snap_created ON snapshots(created_at);
+
+-- Company self-registration (added later; existing companies count as approved)
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'admin';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS cr_number TEXT DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS contact_name TEXT DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS contact_email TEXT DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS contact_phone TEXT DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS fleet_size INTEGER;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS reg_note TEXT DEFAULT '';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS reviewed_at BIGINT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS review_note TEXT DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at BIGINT;
+
+-- Supabase (and similar) expose the public schema through an automatic web API.
+-- Row level security with no policies blocks that API completely; Salem's own
+-- server connects as the table owner, which is not affected.
+ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drivers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE snapshots ENABLE ROW LEVEL SECURITY;
 `;
 
 const now = () => Date.now();
@@ -299,8 +323,9 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   const u = await db.get('SELECT * FROM users WHERE lower(email) = lower(?)', String(email || '').trim());
   if (!u || !bcrypt.compareSync(String(password || ''), u.password_hash)) return res.status(401).json({ error: 'bad_credentials' });
   if (u.company_id) {
-    const c = await db.get('SELECT active FROM companies WHERE id = ?', u.company_id);
-    if (!c || !c.active) return res.status(403).json({ error: 'company_disabled' });
+    const c = await db.get('SELECT active, status FROM companies WHERE id = ?', u.company_id);
+    const block = companyBlock(c);
+    if (block) return res.status(403).json({ error: block });
   }
   setAuth(res, { id: u.id, role: u.role, company_id: u.company_id });
   res.json({ role: u.role });
@@ -309,11 +334,67 @@ app.post('/api/auth/login', wrap(async (req, res) => {
 app.post('/api/auth/driver-login', wrap(async (req, res) => {
   const { company_code, phone, pin } = parseBody(req);
   const c = await db.get('SELECT * FROM companies WHERE code = ?', String(company_code || '').trim().toUpperCase());
-  if (!c || !c.active) return res.status(401).json({ error: 'bad_credentials' });
+  if (!c || companyBlock(c)) return res.status(401).json({ error: 'bad_credentials' });
   const d = await db.get('SELECT * FROM drivers WHERE company_id = ? AND phone = ?', c.id, normPhone(phone));
   if (!d || !d.active || !bcrypt.compareSync(String(pin || ''), d.pin_hash)) return res.status(401).json({ error: 'bad_credentials' });
   setAuth(res, { id: d.id, role: 'driver', company_id: c.id });
   res.json({ role: 'driver' });
+}));
+
+/* Is this company allowed to sign in? Returns an error code, or null when it is. */
+function companyBlock(c) {
+  if (!c) return 'company_disabled';
+  if (c.status === 'pending') return 'company_pending';
+  if (c.status === 'rejected') return 'company_rejected';
+  if (!c.active) return 'company_disabled';
+  return null;
+}
+
+/* Simple per-IP limit for public forms (registration) */
+const hits = new Map();
+function limited(key, max, windowMs) {
+  const t = now();
+  const arr = (hits.get(key) || []).filter(x => t - x < windowMs);
+  arr.push(t);
+  hits.set(key, arr);
+  return arr.length > max;
+}
+setInterval(() => { const t = now(); for (const [k, v] of hits) if (!v.some(x => t - x < 3600000)) hits.delete(k); }, 600000).unref();
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/* Public: a company registers itself. It waits for platform admin approval. */
+app.post('/api/register', wrap(async (req, res) => {
+  if (limited('reg:' + req.ip, 10, 3600000)) return res.status(429).json({ error: 'rate_limited' });
+  const b = parseBody(req);
+  const f = k => String(b[k] || '').trim();
+  const company = f('company_name'), contact = f('contact_name'), email = f('email'), phone = normPhone(b.phone), password = String(b.password || '');
+  if (!company || !contact || !email || phone.length < 7 || !f('city')) return res.status(400).json({ error: 'missing_fields' });
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'bad_email' });
+  if (password.length < 8) return res.status(400).json({ error: 'weak_password' });
+  if (await db.get('SELECT id FROM users WHERE lower(email) = lower(?)', email)) return res.status(409).json({ error: 'email_taken' });
+  let code;
+  do { code = makeCode(); } while (await db.get('SELECT id FROM companies WHERE code = ?', code));
+  const fleet = Math.round(Number(b.fleet_size));
+  await db.tx(async t => {
+    const c = await t.get(`INSERT INTO companies (name, code, active, status, source, cr_number, city, contact_name, contact_email, contact_phone, fleet_size, reg_note, created_at)
+      VALUES (?, ?, 0, 'pending', 'self', ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      company.slice(0, 120), code, f('cr_number').slice(0, 30), f('city').slice(0, 60), contact.slice(0, 80), email.slice(0, 120), phone,
+      Number.isFinite(fleet) && fleet > 0 ? fleet : null, f('note').slice(0, 500), now());
+    await t.run('INSERT INTO users (company_id, role, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      c.id, 'supervisor', contact.slice(0, 80), email, bcrypt.hashSync(password, 10), now());
+  });
+  res.json({ ok: true });
+}));
+
+/* Signed-in supervisor or admin changes their own password */
+app.post('/api/auth/change-password', auth('supervisor', 'admin'), wrap(async (req, res) => {
+  const { current_password, new_password } = parseBody(req);
+  if (String(new_password || '').length < 8) return res.status(400).json({ error: 'weak_password' });
+  const u = await db.get('SELECT id, password_hash FROM users WHERE id = ?', req.auth.id);
+  if (!u || !bcrypt.compareSync(String(current_password || ''), u.password_hash)) return res.status(400).json({ error: 'wrong_password' });
+  await db.run('UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?', bcrypt.hashSync(String(new_password), 10), now(), u.id);
+  res.json({ ok: true });
 }));
 
 app.post('/api/auth/logout', (req, res) => {
@@ -344,7 +425,7 @@ admin.get('/companies', wrap(async (req, res) => {
       (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id) AS supervisors,
       (SELECT COUNT(*) FROM requests r WHERE r.company_id = c.id AND r.status = 'active') AS active_sessions,
       (SELECT COUNT(*) FROM events e WHERE e.company_id = c.id AND e.created_at > ?) AS events_30d
-    FROM companies c ORDER BY c.created_at DESC`, now() - 30 * 86400000);
+    FROM companies c ORDER BY (c.status = 'pending') DESC, c.created_at DESC`, now() - 30 * 86400000);
   res.json(rows);
 }));
 
@@ -371,6 +452,28 @@ admin.patch('/companies/:id', wrap(async (req, res) => {
   await db.run('UPDATE companies SET active = ?, name = ? WHERE id = ?',
     active === undefined ? c.active : (active ? 1 : 0), name ? String(name).trim() : c.name, c.id);
   res.json({ ok: true });
+}));
+
+/* Approve or reject a self-registered company */
+admin.post('/companies/:id/review', wrap(async (req, res) => {
+  const { decision, note } = parseBody(req);
+  if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'bad_values' });
+  const c = await db.get('SELECT id FROM companies WHERE id = ?', req.params.id);
+  if (!c) return res.status(404).json({ error: 'not_found' });
+  await db.run('UPDATE companies SET status = ?, active = ?, reviewed_at = ?, review_note = ? WHERE id = ?',
+    decision === 'approve' ? 'approved' : 'rejected', decision === 'approve' ? 1 : 0, now(), String(note || '').slice(0, 500), c.id);
+  res.json({ ok: true });
+}));
+
+/* Give a supervisor a new temporary password (when they forget theirs) */
+admin.post('/supervisors/:id/reset-password', wrap(async (req, res) => {
+  const u = await db.get("SELECT id FROM users WHERE id = ? AND role = 'supervisor'", req.params.id);
+  if (!u) return res.status(404).json({ error: 'not_found' });
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let pw = '';
+  for (let i = 0; i < 10; i++) pw += alphabet[crypto.randomInt(alphabet.length)];
+  await db.run('UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?', bcrypt.hashSync(pw, 10), now(), u.id);
+  res.json({ password: pw });
 }));
 
 admin.get('/companies/:id/supervisors', wrap(async (req, res) => {
@@ -535,7 +638,8 @@ sup.put('/settings', wrap(async (req, res) => {
   const { min_speed_kmh, gaze_seconds, face_lost_seconds } = parseBody(req);
   const s = Math.min(60, Math.max(0, Number(min_speed_kmh)));
   const g = Math.min(10, Math.max(1, Number(gaze_seconds)));
-  const f = Math.min(120, Math.max(3, Number(face_lost_seconds)));
+  // Face not visible: any number of seconds the company wants; 0 turns it off
+  const f = Math.min(86400, Math.max(0, Number(face_lost_seconds)));
   if (Number.isNaN(s) || Number.isNaN(g) || Number.isNaN(f)) return res.status(400).json({ error: 'bad_values' });
   await db.run('UPDATE companies SET min_speed_kmh = ?, gaze_seconds = ?, face_lost_seconds = ? WHERE id = ?', s, g, f, req.auth.company_id);
   res.json({ ok: true });
@@ -674,6 +778,7 @@ app.get('/', (req, res) => res.sendFile(path.join(pub, 'index.html')));
 app.get('/panel', (req, res) => res.sendFile(path.join(pub, 'panel.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
 app.get('/driver', (req, res) => res.sendFile(path.join(pub, 'driver.html')));
+app.get('/register', (req, res) => res.sendFile(path.join(pub, 'register.html')));
 // MediaPipe runtime served from our own domain (no third-party CDN needed on drivers' phones)
 app.use('/vendor/mediapipe', express.static(path.join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision'), { maxAge: '7d' }));
 app.get('/api/model-source', (req, res) => {

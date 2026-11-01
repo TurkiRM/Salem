@@ -88,8 +88,8 @@
             <label class="field"><span data-i18n="gaze_seconds">مدة النظر للشاشة قبل التسجيل (ثوانٍ)</span><input id="sGaze" type="number" min="1" max="10" step="0.5" dir="ltr"></label>
             <label class="field"><span data-i18n="min_speed">أقل سرعة تُعتبر فيها السيارة متحركة (كم/س)</span><input id="sSpeed" type="number" min="0" max="60" step="1" dir="ltr"></label>
             <p class="faint" data-i18n="min_speed_hint">تحت هذه السرعة لا تُسجَّل مخالفات (مثل الوقوف عند الإشارة أو الاصطفاف).</p>
-            <label class="field"><span data-i18n="face_lost_seconds">مدة اختفاء الوجه قبل التسجيل (ثوانٍ)</span><input id="sFace" type="number" min="3" max="120" step="1" dir="ltr"></label>
-            <p class="faint" data-i18n="face_lost_hint">إذا لم تظهر عينا السائق للكاميرا طوال هذه المدة أثناء الحركة (تغطية الكاميرا أو تحويل الجوال) تُسجَّل مخالفة "الوجه غير ظاهر".</p>
+            <label class="field"><span data-i18n="face_lost_seconds">مدة اختفاء الوجه قبل التسجيل (ثوانٍ)</span><input id="sFace" type="number" min="0" step="1" dir="ltr"></label>
+            <p class="faint" data-i18n="face_lost_hint">إذا لم تظهر عينا السائق للكاميرا طوال هذه المدة أثناء الحركة (تغطية الكاميرا أو تحويل الجوال) تُسجَّل مخالفة "الوجه غير ظاهر". اكتب 0 لإيقاف هذا التنبيه.</p>
             <div class="row"><button class="btn primary" type="submit" data-i18n="save">حفظ</button></div>
           </form>
         </div>
@@ -102,6 +102,16 @@
             </div>
             <p class="faint" data-i18n="driver_access_hint">يدخل السائق من هذا الرابط برمز الشركة ورقم جواله والرمز السري الذي يظهر عند إضافته.</p>
           </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2 data-i18n="change_password">تغيير كلمة المرور</h2></div>
+          <form class="panel-body form" id="pwForm" style="max-width:520px" novalidate>
+            <label class="field"><span data-i18n="current_password">كلمة المرور الحالية</span><input id="pwCurrent" type="password" autocomplete="current-password" dir="ltr"></label>
+            <label class="field"><span data-i18n="new_password">كلمة المرور الجديدة</span><input id="pwNew" type="password" autocomplete="new-password" dir="ltr"></label>
+            <label class="field"><span data-i18n="confirm_password">تأكيد كلمة المرور الجديدة</span><input id="pwConfirm" type="password" autocomplete="new-password" dir="ltr"></label>
+            <div class="error-msg" id="pwErr"></div>
+            <div class="row"><button class="btn primary" type="submit" data-i18n="update_password">تحديث كلمة المرور</button></div>
+          </form>
         </div>
         <div class="panel">
           <div class="panel-head"><h2 data-i18n="team">فريق الإشراف</h2><button class="btn sm" data-action="new-sup" data-i18n="add_supervisor">إضافة مشرف</button></div>

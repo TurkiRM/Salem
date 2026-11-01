@@ -397,6 +397,17 @@
       try { await S.api('PUT', '/api/sup/settings', { gaze_seconds: Number($('#sGaze').value), min_speed_kmh: Number($('#sSpeed').value), face_lost_seconds: Number($('#sFace').value) }); S.toast(S.t('saved')); }
       catch (x) { S.toast(S.errorText(x), 'bad'); }
     };
+    $('#pwForm').onsubmit = async e => {
+      e.preventDefault();
+      const err = $('#pwErr');
+      err.textContent = '';
+      if ($('#pwNew').value !== $('#pwConfirm').value) { err.textContent = S.t('err_password_mismatch'); return; }
+      try {
+        await S.api('POST', '/api/auth/change-password', { current_password: $('#pwCurrent').value, new_password: $('#pwNew').value });
+        $('#pwForm').reset();
+        S.toast(S.t('password_updated'));
+      } catch (x) { err.textContent = S.errorText(x); }
+    };
     let team = [];
     try { team = await S.api('GET', '/api/sup/team'); } catch (_) {}
     $('#teamTable').innerHTML = `<table><thead><tr><th>${S.t('full_name')}</th><th>${S.t('email')}</th><th>${S.t('added')}</th></tr></thead>

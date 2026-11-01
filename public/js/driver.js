@@ -317,7 +317,8 @@
       st.faceLostStart = null;
     } else {
       if (!st.faceLostStart) st.faceLostStart = now;
-      if (isMoving && !st.faceEvent && now - st.faceLostStart >= (st.company.face_lost_seconds || 8) * 1000) {
+      const faceLimit = st.company.face_lost_seconds ?? 8; // 0 = off
+      if (faceLimit > 0 && isMoving && !st.faceEvent && now - st.faceLostStart >= faceLimit * 1000) {
         const ev = (st.faceEvent = { id: null, start: st.faceLostStart, pending: true });
         openEvent('face_lost', st.faceLostStart, {}).then(id => { ev.id = id; ev.pending = false; });
       }

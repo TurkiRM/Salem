@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Register | تسجيل شركة — Salem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@500;600&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .reg-card { width: min(560px, 100%); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+  @media (max-width: 560px) { .two { grid-template-columns: 1fr; } }
+  .step-list { display: grid; gap: .9rem; counter-reset: s; }
+  .step-list div { display: flex; gap: .75rem; align-items: flex-start; }
+  .step-list b { color: #fff; font-family: var(--font-mono); min-width: 1.6em; }
+  .req { color: var(--bad); }
+  .done { text-align: center; display: grid; gap: 1rem; justify-items: center; padding-block: 2rem; }
+  .done .mark { width: 72px; height: 72px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
+  .done .mark svg { width: 36px; height: 36px; }
+</style>
+</head>
+<body>
+<div class="auth-page">
+  <aside class="auth-side">
+    <a class="brand" href="/"><span class="brand-mark" data-icon="logo"></span><span class="brand-name">سالم <small>Salem</small></span></a>
+    <div style="display:grid;gap:1rem">
+      <h1 data-i18n="reg_hero">سجّل شركتك في سالم</h1>
+      <p data-i18n="reg_hero_sub">أرسل بيانات شركتك، وبعد مراجعة فريق سالم يتم تفعيل حسابك لتبدأ بإضافة السائقين ومراقبتهم.</p>
+    </div>
+    <div class="step-list">
+      <div><b>1</b><span data-i18n="reg_step1">أرسل بيانات الشركة وحساب المشرف.</span></div>
+      <div><b>2</b><span data-i18n="reg_step2">يراجع فريق سالم الطلب ويفعّل الحساب.</span></div>
+      <div><b>3</b><span data-i18n="reg_step3">ادخل بالبريد وكلمة المرور، وأضف سائقيك.</span></div>
+    </div>
+    <svg class="road" viewBox="0 0 200 200" fill="none" aria-hidden="true"><path d="M60 200 95 0M140 200 105 0" stroke="#fff" stroke-width="4"/><path d="M100 190v-20M100 150v-20M100 110v-20M100 70v-20M100 30V10" stroke="#fff" stroke-width="4"/></svg>
+  </aside>
+
+  <main class="auth-main">
+    <div class="auth-card reg-card">
+      <div class="auth-top">
+        <h2 data-i18n="register_company">تسجيل شركة</h2>
+        <button class="btn ghost sm lang-btn" data-lang-toggle></button>
+      </div>
+
+      <form class="form" id="regForm" novalidate>
+        <p class="label" data-i18n="reg_company_info">بيانات الشركة</p>
+        <label class="field"><span><span data-i18n="company_name">اسم الشركة</span> <span class="req">*</span></span><input id="rCompany" maxlength="120" autocomplete="organization"></label>
+        <div class="two">
+          <label class="field"><span data-i18n="cr_number">رقم السجل التجاري</span><input id="rCr" maxlength="30" inputmode="numeric" dir="ltr"></label>
+          <label class="field"><span><span data-i18n="city">المدينة</span> <span class="req">*</span></span><input id="rCity" maxlength="60" list="cities"></label>
+        </div>
+        <datalist id="cities">
+          <option value="الرياض"><option value="جدة"><option value="مكة المكرمة"><option value="المدينة المنورة"><option value="الدمام">
+          <option value="الخبر"><option value="الظهران"><option value="الأحساء"><option value="القصيم"><option value="بريدة"><option value="تبوك">
+          <option value="أبها"><option value="خميس مشيط"><option value="حائل"><option value="جازان"><option value="نجران"><option value="الطائف"><option value="ينبع"><option value="الجبيل">
+        </datalist>
+        <label class="field"><span data-i18n="fleet_size">عدد السائقين تقريباً</span><input id="rFleet" type="number" min="1" step="1" dir="ltr"></label>
+
+        <p class="label" style="margin-top:.4rem" data-i18n="reg_account_info">حساب المشرف</p>
+        <label class="field"><span><span data-i18n="contact_name">اسم المسؤول</span> <span class="req">*</span></span><input id="rContact" maxlength="80" autocomplete="name"></label>
+        <div class="two">
+          <label class="field"><span><span data-i18n="email">البريد الإلكتروني</span> <span class="req">*</span></span><input id="rEmail" type="email" autocomplete="email" dir="ltr"></label>
+          <label class="field"><span><span data-i18n="phone">رقم الجوال</span> <span class="req">*</span></span><input id="rPhone" type="tel" autocomplete="tel" dir="ltr" placeholder="05XXXXXXXX"></label>
+        </div>
+        <div class="two">
+          <label class="field"><span><span data-i18n="password">كلمة المرور</span> <span class="req">*</span></span><input id="rPass" type="password" autocomplete="new-password" dir="ltr" data-i18n-ph="min8"></label>
+          <label class="field"><span><span data-i18n="confirm_password">تأكيد كلمة المرور</span> <span class="req">*</span></span><input id="rPass2" type="password" autocomplete="new-password" dir="ltr"></label>
+        </div>
+        <label class="field"><span data-i18n="reg_note">ملاحظات (اختياري)</span><textarea id="rNote" rows="2" maxlength="500"></textarea></label>
+        <label class="check"><input type="checkbox" id="rAgree"><span data-i18n="reg_agree">أقر بأن البيانات صحيحة، وأن الشركة ستحصل على موافقة السائقين قبل مراقبتهم.</span></label>
+        <div class="error-msg" id="rErr"></div>
+        <button class="btn primary lg block" type="submit" id="rSubmit" data-i18n="reg_submit">إرسال الطلب</button>
+        <p class="faint center" style="text-align:center"><span data-i18n="have_account">لديك حساب؟</span> <a href="/" data-i18n="sign_in">دخول</a></p>
+      </form>
+
+      <div class="done" id="regDone" hidden>
+        <div class="mark" data-icon="check"></div>
+        <h2 data-i18n="reg_done_title">تم استلام طلبك</h2>
+        <p class="muted" data-i18n="reg_done_text">سيراجع فريق سالم بيانات شركتك. بعد التفعيل يمكنك الدخول بالبريد وكلمة المرور التي اخترتها.</p>
+        <a class="btn primary" href="/" data-i18n="back_to_login">العودة لصفحة الدخول</a>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="/js/i18n.js"></script>
+<script src="/js/common.js"></script>
+<script>
+(function () {
+  const S = Salem, $ = s => document.querySelector(s);
+  const applyPh = () => document.querySelectorAll('[data-i18n-ph]').forEach(el => el.placeholder = S.t(el.dataset.i18nPh));
+  S.applyI18n(); applyPh();
+  S.onLangChange = applyPh;
+  $('#regForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const err = $('#rErr');
+    err.textContent = '';
+    if ($('#rPass').value !== $('#rPass2').value) { err.textContent = S.t('err_password_mismatch'); return; }
+    if (!$('#rAgree').checked) { err.textContent = S.t('err_agree'); return; }
+    const btn = $('#rSubmit');
+    btn.disabled = true;
+    try {
+      await S.api('POST', '/api/register', {
+        company_name: $('#rCompany').value, cr_number: $('#rCr').value, city: $('#rCity').value, fleet_size: $('#rFleet').value,
+        contact_name: $('#rContact').value, email: $('#rEmail').value, phone: $('#rPhone').value, password: $('#rPass').value, note: $('#rNote').value
+      });
+      $('#regForm').hidden = true;
+      $('#regDone').hidden = false;
+      window.scrollTo(0, 0);
+    } catch (x) { err.textContent = S.errorText(x); }
+    finally { btn.disabled = false; }
+  });
+})();
+</script>
+</body>
+</html>

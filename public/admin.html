@@ -7,14 +7,29 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@500;600&display=swap">
 <link rel="stylesheet" href="/css/style.css">
+<style>
+  .req-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .9rem; padding: 1.1rem; }
+  .reg-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); padding: 1rem; display: grid; gap: .8rem; position: relative; overflow: hidden; }
+  .reg-card::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; width: 4px; background: var(--warn); }
+  .reg-card .top { display: flex; justify-content: space-between; gap: .5rem; align-items: flex-start; }
+  .kv-list { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .3rem .9rem; font-size: .9rem; }
+  .kv-list dt { color: var(--ink-3); }
+  .kv-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .note-box { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .7rem; color: var(--ink-2); font-size: .9rem; }
+  .src { font-size: .72rem; color: var(--ink-3); display: block; }
+</style>
 </head>
 <body>
 <div class="shell">
   <aside class="rail" id="rail">
     <a class="brand" href="/admin"><span class="brand-mark" data-icon="logo"></span><span class="brand-name">سالم <small data-i18n="platform_admin">إدارة المنصة</small></span></a>
-    <nav class="nav"><a href="/admin" class="active"><span data-icon="building"></span><span data-i18n="companies">الشركات</span></a></nav>
+    <nav class="nav">
+      <a href="#requests" id="navReq"><span data-icon="alert"></span><span data-i18n="reg_requests">طلبات التسجيل</span><span class="count" id="pendingCount" hidden></span></a>
+      <a href="#companies" class="active"><span data-icon="building"></span><span data-i18n="companies">الشركات</span></a>
+    </nav>
     <div class="rail-foot">
       <div class="who"><b id="meName">—</b><span id="meEmail" class="faint"></span></div>
+      <button class="btn sm" id="pwBtn" data-i18n="change_password">تغيير كلمة المرور</button>
       <button class="btn sm lang-btn" data-lang-toggle></button>
       <button class="btn sm" id="logoutBtn" data-i18n="sign_out">خروج</button>
     </div>
@@ -27,7 +42,16 @@
         <button class="btn primary" id="newCompany"><span data-icon="plus" style="width:18px;display:inline-flex"></span><span data-i18n="add_company">إضافة شركة</span></button>
       </div>
       <div class="kpis" id="kpis"></div>
-      <div class="panel"><div class="table-wrap" id="companyTable"></div></div>
+
+      <div class="panel" id="requests">
+        <div class="panel-head"><h2 data-i18n="reg_requests">طلبات التسجيل</h2><span class="faint" data-i18n="reg_requests_hint">شركات سجّلت بنفسها وتنتظر موافقتك</span></div>
+        <div id="reqList"></div>
+      </div>
+
+      <div class="panel" id="companies">
+        <div class="panel-head"><h2 data-i18n="all_companies">كل الشركات</h2></div>
+        <div class="table-wrap" id="companyTable"></div>
+      </div>
     </div>
   </main>
 </div>
@@ -48,8 +72,11 @@
     $('#logoutBtn').onclick = () => S.logout('/');
     $('#menuBtn').onclick = () => $('#rail').classList.toggle('open');
     $('#newCompany').onclick = openCompanyModal;
+    $('#pwBtn').onclick = openPasswordModal;
+    document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => $('#rail').classList.remove('open')));
     S.onLangChange = render;
     load();
+    setInterval(load, 30000);
   }
 
   async function load() {
@@ -57,28 +84,96 @@
     render();
   }
 
+  const statusPill = c => {
+    if (c.status === 'pending') return `<span class="pill warn">${S.t('cs_pending')}</span>`;
+    if (c.status === 'rejected') return `<span class="pill bad">${S.t('cs_rejected')}</span>`;
+    return c.active ? `<span class="pill ok">${S.t('enabled')}</span>` : `<span class="pill">${S.t('disabled')}</span>`;
+  };
+
+  function infoList(c) {
+    const rows = [
+      [S.t('cr_number'), c.cr_number ? `<span class="mono">${S.esc(c.cr_number)}</span>` : '—'],
+      [S.t('city'), S.esc(c.city || '—')],
+      [S.t('fleet_size'), c.fleet_size || '—'],
+      [S.t('contact_name'), S.esc(c.contact_name || '—')],
+      [S.t('email'), c.contact_email ? `<span dir="ltr">${S.esc(c.contact_email)}</span>` : '—'],
+      [S.t('phone'), c.contact_phone ? `<span dir="ltr" class="mono">${S.esc(c.contact_phone)}</span>` : '—']
+    ];
+    const filled = rows.filter(([, v]) => v !== '—');
+    return filled.length ? `<dl class="kv-list">${filled.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>` : '';
+  }
+
   function render() {
-    const sum = k => companies.reduce((s, c) => s + c[k], 0);
-    $('#kpis').innerHTML = [['companies', companies.length], ['kpi_drivers', sum('drivers')], ['kpi_active', sum('active_sessions')], ['alerts_30d', sum('events_30d')]]
-      .map(([k, v]) => `<div class="kpi"><span class="label">${S.t(k)}</span><span class="v">${v}</span></div>`).join('');
-    if (!companies.length) {
+    const pending = companies.filter(c => c.status === 'pending');
+    const pc = $('#pendingCount');
+    pc.hidden = !pending.length; pc.textContent = pending.length;
+    const approved = companies.filter(c => c.status !== 'pending' && c.status !== 'rejected');
+    const sum = k => approved.reduce((s, c) => s + c[k], 0);
+    $('#kpis').innerHTML = [
+      ['reg_requests', pending.length, pending.length ? 'attn' : ''],
+      ['companies', approved.length, ''], ['kpi_drivers', sum('drivers'), ''],
+      ['kpi_active', sum('active_sessions'), ''], ['alerts_30d', sum('events_30d'), '']
+    ].map(([k, v, cls]) => `<div class="kpi ${cls}"><span class="label">${S.t(k)}</span><span class="v">${v}</span></div>`).join('');
+
+    // Registration requests
+    $('#reqList').innerHTML = pending.length ? `<div class="req-grid">${pending.map(c => `
+      <div class="reg-card">
+        <div class="top"><div><b>${S.esc(c.name)}</b><span class="faint" style="display:block">${S.t('registered')} ${S.ago(c.created_at)}</span></div>${statusPill(c)}</div>
+        ${infoList(c)}
+        ${c.reg_note ? `<div class="note-box">${S.esc(c.reg_note)}</div>` : ''}
+        <div class="row end" style="gap:.4rem">
+          <button class="btn sm danger" data-reject="${c.id}">${S.t('reject')}</button>
+          <button class="btn sm primary" data-approve="${c.id}">${S.t('approve')}</button>
+        </div>
+      </div>`).join('')}</div>` :
+      `<div class="empty">${S.icons.check}<span>${S.t('no_reg_requests')}</span></div>`;
+    document.querySelectorAll('[data-approve]').forEach(b => b.onclick = () => review(Number(b.dataset.approve), 'approve'));
+    document.querySelectorAll('[data-reject]').forEach(b => b.onclick = () => review(Number(b.dataset.reject), 'reject'));
+
+    // All companies
+    const list = companies.filter(c => c.status !== 'pending');
+    if (!list.length) {
       $('#companyTable').innerHTML = `<div class="empty">${S.icons.building}<b>${S.t('no_companies')}</b><span>${S.t('no_companies_hint')}</span></div>`;
       return;
     }
-    $('#companyTable').innerHTML = `<table><thead><tr><th>${S.t('company')}</th><th>${S.t('company_code')}</th><th>${S.t('nav_drivers')}</th><th>${S.t('team')}</th><th>${S.t('kpi_active')}</th><th>${S.t('alerts_30d')}</th><th>${S.t('status')}</th><th></th></tr></thead>
-      <tbody>${companies.map(c => `<tr>
-        <td><b>${S.esc(c.name)}</b><span class="sub">${S.t('added')} ${S.fmtDate(c.created_at)}</span></td>
-        <td class="mono">${S.esc(c.code)}</td><td class="num">${c.drivers}</td><td class="num">${c.supervisors}</td>
+    $('#companyTable').innerHTML = `<table><thead><tr><th>${S.t('company')}</th><th>${S.t('company_code')}</th><th>${S.t('nav_drivers')}</th><th>${S.t('kpi_active')}</th><th>${S.t('alerts_30d')}</th><th>${S.t('status')}</th><th></th></tr></thead>
+      <tbody>${list.map(c => `<tr>
+        <td><b>${S.esc(c.name)}</b><span class="src">${c.source === 'self' ? S.t('src_self') : S.t('src_admin')} · ${S.fmtDate(c.created_at)}${c.city ? ' · ' + S.esc(c.city) : ''}</span></td>
+        <td class="mono">${S.esc(c.code)}</td><td class="num">${c.drivers}</td>
         <td class="num">${c.active_sessions}</td><td class="num">${c.events_30d}</td>
-        <td><span class="pill ${c.active ? 'ok' : ''}">${c.active ? S.t('enabled') : S.t('disabled')}</span></td>
+        <td>${statusPill(c)}</td>
         <td><div class="row" style="gap:.4rem;flex-wrap:nowrap">
-          <button class="btn sm" data-sups="${c.id}">${S.t('team')}</button>
-          <button class="btn sm ghost" data-tog="${c.id}" data-on="${c.active}">${c.active ? S.t('disable') : S.t('enable')}</button></div></td>
+          <button class="btn sm" data-info="${c.id}">${S.t('details')}</button>
+          ${c.status === 'rejected'
+            ? `<button class="btn sm" data-approve2="${c.id}">${S.t('approve')}</button>`
+            : `<button class="btn sm ghost" data-tog="${c.id}" data-on="${c.active}">${c.active ? S.t('disable') : S.t('enable')}</button>`}
+        </div></td>
       </tr>`).join('')}</tbody></table>`;
     document.querySelectorAll('[data-tog]').forEach(b => b.onclick = async () => {
-      await S.api('PATCH', '/api/admin/companies/' + b.dataset.tog, { active: b.dataset.on !== '1' }); load();
+      try { await S.api('PATCH', '/api/admin/companies/' + b.dataset.tog, { active: b.dataset.on !== '1' }); load(); }
+      catch (e) { S.toast(S.errorText(e), 'bad'); }
     });
-    document.querySelectorAll('[data-sups]').forEach(b => b.onclick = () => openTeam(companies.find(c => c.id === Number(b.dataset.sups))));
+    document.querySelectorAll('[data-approve2]').forEach(b => b.onclick = () => review(Number(b.dataset.approve2), 'approve'));
+    document.querySelectorAll('[data-info]').forEach(b => b.onclick = () => openCompany(companies.find(c => c.id === Number(b.dataset.info))));
+  }
+
+  function review(id, decision) {
+    const c = companies.find(x => x.id === id);
+    const approve = decision === 'approve';
+    S.modal({
+      title: approve ? S.t('approve_title') : S.t('reject_title'),
+      body: `<p>${S.t(approve ? 'approve_body' : 'reject_body', { name: S.esc(c.name) })}</p>
+        <label class="field"><span>${S.t(approve ? 'note_optional' : 'reject_reason')}</span><textarea id="rvNote" rows="2" maxlength="500"></textarea></label>`,
+      actions: [{ label: S.t('cancel') }, {
+        label: approve ? S.t('approve') : S.t('reject'), kind: approve ? 'primary' : 'danger', onClick: async () => {
+          try {
+            await S.api('POST', `/api/admin/companies/${id}/review`, { decision, note: document.getElementById('rvNote').value });
+            S.toast(approve ? S.t('company_approved', { code: c.code }) : S.t('company_rejected'));
+            load();
+          } catch (e) { S.toast(S.errorText(e), 'bad'); return true; }
+        }
+      }]
+    });
   }
 
   function openCompanyModal() {
@@ -102,29 +197,68 @@
     });
   }
 
-  async function openTeam(c) {
+  async function openCompany(c) {
     let team = [];
     try { team = await S.api('GET', `/api/admin/companies/${c.id}/supervisors`); } catch (_) {}
     const body = document.createElement('div');
     body.className = 'form';
-    body.innerHTML = `<div class="table-wrap panel"><table><tbody>${team.map(u => `<tr><td>${S.esc(u.name)}</td><td dir="ltr" style="text-align:start">${S.esc(u.email)}</td>
-        <td><button class="btn sm danger" data-del="${u.id}">${S.t('remove')}</button></td></tr>`).join('') || `<tr><td class="muted">—</td></tr>`}</tbody></table></div>
+    body.innerHTML = `
+      <div class="row" style="justify-content:space-between"><span class="mono">${S.t('company_code')}: <b>${S.esc(c.code)}</b></span>${statusPill(c)}</div>
+      ${infoList(c)}
+      ${c.reg_note ? `<div class="note-box">${S.esc(c.reg_note)}</div>` : ''}
+      ${c.review_note ? `<p class="faint">${S.t('review_note')}: ${S.esc(c.review_note)}</p>` : ''}
+      <p class="label">${S.t('team')}</p>
+      <div class="table-wrap panel"><table><tbody>${team.map(u => `<tr><td>${S.esc(u.name)}</td><td dir="ltr" style="text-align:start">${S.esc(u.email)}</td>
+        <td><div class="row" style="gap:.4rem;flex-wrap:nowrap"><button class="btn sm" data-reset="${u.id}">${S.t('reset_password')}</button>
+        <button class="btn sm danger" data-del="${u.id}">${S.t('remove')}</button></div></td></tr>`).join('') || `<tr><td class="muted">—</td></tr>`}</tbody></table></div>
       <p class="label">${S.t('add_supervisor')}</p>
       <label class="field"><span>${S.t('full_name')}</span><input id="tName"></label>
       <label class="field"><span>${S.t('email')}</span><input id="tEmail" type="email" dir="ltr"></label>
       <label class="field"><span>${S.t('password')}</span><input id="tPass" type="text" dir="ltr" placeholder="${S.t('min8')}"></label>
       <div class="error-msg" id="tErr"></div>`;
     const m = S.modal({
-      title: S.t('team') + ' — ' + c.name, body,
+      title: c.name, body, wide: true,
       actions: [{ label: S.t('done') }, {
-        label: S.t('add'), kind: 'primary', onClick: async ({ close }) => {
-          try { await S.api('POST', `/api/admin/companies/${c.id}/supervisors`, { name: $('#tName').value, email: $('#tEmail').value, password: $('#tPass').value }); S.toast(S.t('saved')); close(); load(); openTeam(c); }
+        label: S.t('add_supervisor'), kind: 'primary', onClick: async ({ close }) => {
+          try { await S.api('POST', `/api/admin/companies/${c.id}/supervisors`, { name: $('#tName').value, email: $('#tEmail').value, password: $('#tPass').value }); S.toast(S.t('saved')); close(); load(); openCompany(c); }
           catch (e) { $('#tErr').textContent = S.errorText(e); return true; }
         }
       }]
     });
     body.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-      await S.api('DELETE', '/api/admin/supervisors/' + b.dataset.del); m.close(); load(); openTeam(c);
+      await S.api('DELETE', '/api/admin/supervisors/' + b.dataset.del); m.close(); load(); openCompany(c);
+    });
+    body.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
+      try {
+        const r = await S.api('POST', `/api/admin/supervisors/${b.dataset.reset}/reset-password`);
+        const u = team.find(x => x.id === Number(b.dataset.reset));
+        m.close();
+        S.modal({
+          title: S.t('temp_password'),
+          body: `<p class="muted">${S.t('temp_password_hint')}</p>
+            <div class="secret"><div class="kv"><span>${S.t('email')}</span><span dir="ltr">${S.esc(u.email)}</span></div>
+            <div class="kv"><span>${S.t('password')}</span><b dir="ltr">${S.esc(r.password)}</b></div></div>`,
+          actions: [{ label: S.t('copy'), onClick: async () => { await S.copy(r.password); return true; } }, { label: S.t('done'), kind: 'primary' }]
+        });
+      } catch (e) { S.toast(S.errorText(e), 'bad'); }
+    });
+  }
+
+  function openPasswordModal() {
+    S.modal({
+      title: S.t('change_password'),
+      body: `<form class="form" onsubmit="return false">
+        <label class="field"><span>${S.t('current_password')}</span><input id="aCur" type="password" dir="ltr" autocomplete="current-password"></label>
+        <label class="field"><span>${S.t('new_password')}</span><input id="aNew" type="password" dir="ltr" autocomplete="new-password" placeholder="${S.t('min8')}"></label>
+        <label class="field"><span>${S.t('confirm_password')}</span><input id="aNew2" type="password" dir="ltr" autocomplete="new-password"></label>
+        <div class="error-msg" id="aErr"></div></form>`,
+      actions: [{ label: S.t('cancel') }, {
+        label: S.t('update_password'), kind: 'primary', onClick: async () => {
+          if ($('#aNew').value !== $('#aNew2').value) { $('#aErr').textContent = S.t('err_password_mismatch'); return true; }
+          try { await S.api('POST', '/api/auth/change-password', { current_password: $('#aCur').value, new_password: $('#aNew').value }); S.toast(S.t('password_updated')); }
+          catch (e) { $('#aErr').textContent = S.errorText(e); return true; }
+        }
+      }]
     });
   }
 
