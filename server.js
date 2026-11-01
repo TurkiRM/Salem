@@ -12,6 +12,7 @@ const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool, types } = require('pg');
+const mailer = require('./mailer');
 
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -20,6 +21,10 @@ const RETENTION_DAYS = Number(process.env.SNAPSHOT_RETENTION_DAYS || 30);
 const REQUEST_EXPIRY_MS = Number(process.env.REQUEST_EXPIRY_MIN || 15) * 60 * 1000;
 const COOKIE_SECURE = String(process.env.COOKIE_SECURE || 'false') === 'true';
 const HEARTBEAT_STALE_MS = 45 * 1000;
+// Who gets "new registration" emails (comma-separated); defaults to the admin account email
+const ADMIN_NOTIFY = (process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '').split(',').map(x => x.trim()).filter(Boolean);
+// Public address used in email links; falls back to the address the request came in on
+const appUrl = req => (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
 
 if (!DATABASE_URL) {
   console.error('[salem] DATABASE_URL is not set. Add your Postgres connection string to .env (see README).');
@@ -384,6 +389,11 @@ app.post('/api/register', wrap(async (req, res) => {
     await t.run('INSERT INTO users (company_id, role, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       c.id, 'supervisor', contact.slice(0, 80), email, bcrypt.hashSync(password, 10), now());
   });
+  // Emails: tell the platform admin, and confirm to the company
+  const saved = await db.get('SELECT * FROM companies WHERE code = ?', code);
+  const url = appUrl(req);
+  if (ADMIN_NOTIFY.length) mailer.sendLater({ to: ADMIN_NOTIFY, replyTo: saved.contact_email, ...mailer.T.adminNewRegistration(saved, url) });
+  mailer.sendLater({ to: saved.contact_email, ...mailer.T.companyReceived(saved, url) });
   res.json({ ok: true });
 }));
 
@@ -458,11 +468,37 @@ admin.patch('/companies/:id', wrap(async (req, res) => {
 admin.post('/companies/:id/review', wrap(async (req, res) => {
   const { decision, note } = parseBody(req);
   if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'bad_values' });
-  const c = await db.get('SELECT id FROM companies WHERE id = ?', req.params.id);
+  const c = await db.get('SELECT * FROM companies WHERE id = ?', req.params.id);
   if (!c) return res.status(404).json({ error: 'not_found' });
+  const cleanNote = String(note || '').slice(0, 500);
   await db.run('UPDATE companies SET status = ?, active = ?, reviewed_at = ?, review_note = ? WHERE id = ?',
-    decision === 'approve' ? 'approved' : 'rejected', decision === 'approve' ? 1 : 0, now(), String(note || '').slice(0, 500), c.id);
-  res.json({ ok: true });
+    decision === 'approve' ? 'approved' : 'rejected', decision === 'approve' ? 1 : 0, now(), cleanNote, c.id);
+  // Email the company. Admin-added companies have no contact email, so use their first supervisor.
+  let to = c.contact_email;
+  if (!to) { const u = await db.get('SELECT email FROM users WHERE company_id = ? ORDER BY id LIMIT 1', c.id); to = u && u.email; }
+  if (to) {
+    const reply = ADMIN_NOTIFY[0];
+    const tpl = decision === 'approve' ? mailer.T.companyApproved({ ...c, contact_email: to }, appUrl(req), cleanNote) : mailer.T.companyRejected(c, appUrl(req), cleanNote);
+    mailer.sendLater({ to, replyTo: reply, ...tpl });
+  }
+  res.json({ ok: true, emailed: !!to && mailer.status().enabled });
+}));
+
+/* Email settings check + test message from the admin dashboard */
+admin.get('/email-status', wrap(async (req, res) => {
+  res.json({ ...mailer.status(), notify: ADMIN_NOTIFY });
+}));
+admin.post('/email-test', wrap(async (req, res) => {
+  const me = await db.get('SELECT email FROM users WHERE id = ?', req.auth.id);
+  const to = String(parseBody(req).to || '').trim() || (ADMIN_NOTIFY[0] || (me && me.email));
+  if (!EMAIL_RE.test(to)) return res.status(400).json({ error: 'bad_email' });
+  if (!mailer.status().enabled) return res.status(400).json({ error: 'email_not_configured' });
+  try {
+    await mailer.send({ to, ...mailer.T.test(appUrl(req)) });
+    res.json({ ok: true, to });
+  } catch (e) {
+    res.status(502).json({ error: 'email_failed', detail: e.message.slice(0, 300) });
+  }
 }));
 
 /* Give a supervisor a new temporary password (when they forget theirs) */

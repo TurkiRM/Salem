@@ -122,6 +122,28 @@ Tip for drivers: from the browser menu choose **Add to Home screen**, so Salem o
 | `REQUEST_EXPIRY_MIN` | 15 | Minutes a driver has to accept before the request expires |
 | `COOKIE_SECURE` | false | Set to `true` behind HTTPS |
 
+### Email notifications (optional)
+
+Salem sends these emails, each in Arabic and English:
+
+| When | To |
+|---|---|
+| A company registers | You (`ADMIN_NOTIFY_EMAIL`, or `ADMIN_EMAIL`), with all its details and a **Review request** button. Replying goes to the company. |
+| A company registers | The company: "We received your registration" |
+| You approve | The company: sign-in link, company code and driver link |
+| You reject | The company, with your reason if you wrote one |
+
+**Setup with Resend (recommended, works on Render's free plan):**
+
+1. Create an account at resend.com → **Domains** → add your domain (e.g. `salem.sa`) and add the DNS records it shows. Until a domain is verified, Resend only delivers to your own email address.
+2. **API Keys** → create a key.
+3. On Render, add environment variables: `RESEND_API_KEY`, `EMAIL_FROM` (e.g. `Salem <no-reply@salem.sa>`), `APP_URL` (`https://salem-kxe4.onrender.com`), and optionally `ADMIN_NOTIFY_EMAIL`.
+4. Redeploy, open the admin dashboard → **Email notifications** → **Send test email**.
+
+**Setup with SMTP instead:** set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` and `EMAIL_FROM` (Gmail needs an *app password*, not your normal password). Render's free plan may block SMTP ports, which is why Resend is recommended there.
+
+Without any of these, everything works the same and emails are skipped. The admin dashboard shows whether email is on.
+
 **Passwords:** supervisors change their own password in **Settings → Change password**; you change yours from the admin sidebar. If a supervisor forgets theirs, open the company in the admin dashboard → **Details** → **New password** and send them the temporary password shown.
 
 Per-company settings (in the panel under **Settings**): seconds looking at the screen before recording, the minimum speed that counts as moving, and seconds the face can be hidden before recording (any number; 0 turns it off).
@@ -138,6 +160,7 @@ Per-company settings (in the panel under **Settings**): seconds looking at the s
 
 ```
 server.js                 API, auth, PostgreSQL database, photo storage
+mailer.js                 email notifications (Resend or SMTP) and their Arabic/English templates
 scripts/fetch-model.js    downloads the MediaPipe face model to public/models
 scripts/import-sqlite.js  one-time copy of data from the old SQLite version
 public/index.html         sign-in for admin and supervisors

@@ -48,6 +48,18 @@
         <div id="reqList"></div>
       </div>
 
+      <div class="panel" id="emailPanel">
+        <div class="panel-head"><h2 data-i18n="email_notifications">إشعارات البريد</h2><span id="emailPill"></span></div>
+        <div class="panel-body" style="display:grid;gap:.7rem">
+          <p class="muted" id="emailText"></p>
+          <div class="row">
+            <input id="testTo" type="email" dir="ltr" style="max-width:320px" data-i18n-ph="test_to_ph">
+            <button class="btn" id="testBtn" data-i18n="send_test">إرسال رسالة تجربة</button>
+          </div>
+          <div class="error-msg" id="testErr"></div>
+        </div>
+      </div>
+
       <div class="panel" id="companies">
         <div class="panel-head"><h2 data-i18n="all_companies">كل الشركات</h2></div>
         <div class="table-wrap" id="companyTable"></div>
@@ -74,7 +86,9 @@
     $('#newCompany').onclick = openCompanyModal;
     $('#pwBtn').onclick = openPasswordModal;
     document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => $('#rail').classList.remove('open')));
-    S.onLangChange = render;
+    S.onLangChange = () => { render(); renderEmail(); };
+    $('#testBtn').onclick = sendTest;
+    loadEmail();
     load();
     setInterval(load, 30000);
   }
@@ -157,6 +171,33 @@
     document.querySelectorAll('[data-info]').forEach(b => b.onclick = () => openCompany(companies.find(c => c.id === Number(b.dataset.info))));
   }
 
+  let emailStatus = null;
+  async function loadEmail() {
+    try { emailStatus = await S.api('GET', '/api/admin/email-status'); } catch (_) {}
+    renderEmail();
+  }
+  function renderEmail() {
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => el.placeholder = S.t(el.dataset.i18nPh));
+    const e = emailStatus;
+    if (!e) return;
+    $('#emailPill').innerHTML = e.enabled ? `<span class="pill ok">${S.t('email_on')}</span>` : `<span class="pill warn">${S.t('email_off')}</span>`;
+    $('#emailText').innerHTML = e.enabled
+      ? S.t('email_on_text', { provider: e.provider === 'resend' ? 'Resend' : 'SMTP', from: S.esc(e.from), notify: S.esc(e.notify.join(', ') || '—') })
+      : S.t('email_off_text');
+    if (!$('#testTo').value && e.notify[0]) $('#testTo').value = e.notify[0];
+    $('#testBtn').disabled = !e.enabled;
+  }
+  async function sendTest() {
+    const err = $('#testErr'), btn = $('#testBtn');
+    err.textContent = ''; btn.disabled = true;
+    try {
+      const r = await S.api('POST', '/api/admin/email-test', { to: $('#testTo').value });
+      S.toast(S.t('test_sent', { to: r.to }));
+    } catch (x) {
+      err.textContent = x.code === 'email_failed' ? S.t('err_email_failed') : S.errorText(x);
+    } finally { btn.disabled = !(emailStatus && emailStatus.enabled); }
+  }
+
   function review(id, decision) {
     const c = companies.find(x => x.id === id);
     const approve = decision === 'approve';
@@ -167,8 +208,8 @@
       actions: [{ label: S.t('cancel') }, {
         label: approve ? S.t('approve') : S.t('reject'), kind: approve ? 'primary' : 'danger', onClick: async () => {
           try {
-            await S.api('POST', `/api/admin/companies/${id}/review`, { decision, note: document.getElementById('rvNote').value });
-            S.toast(approve ? S.t('company_approved', { code: c.code }) : S.t('company_rejected'));
+            const r = await S.api('POST', `/api/admin/companies/${id}/review`, { decision, note: document.getElementById('rvNote').value });
+            S.toast((approve ? S.t('company_approved', { code: c.code }) : S.t('company_rejected')) + (r.emailed ? ' · ' + S.t('company_emailed') : ''));
             load();
           } catch (e) { S.toast(S.errorText(e), 'bad'); return true; }
         }
