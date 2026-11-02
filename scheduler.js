@@ -8,7 +8,9 @@
  */
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MIN_LEFT = 5; // don't send a request when less than 5 minutes of the window remain
+const MIN_LEFT = 5; // don't send a request when less than 5 minutes of the window remain…
+// …but for short sessions (e.g. 5–10 minutes) only stop in the second half, so they still get sent
+const minLeft = s => Math.min(MIN_LEFT, Math.floor(s.duration_min / 2));
 
 function validTimeZone(tz) {
   try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch (_) { return false; }
@@ -37,7 +39,7 @@ function openWindow(s, tz, nowMs) {
   const p = localParts(tz, nowMs);
   if (!parseDays(s.days).includes(p.weekday)) return null;
   const start = toMin(s.start_time), end = start + s.duration_min;
-  if (p.minutes < start || p.minutes >= end - MIN_LEFT) return null;
+  if (p.minutes < start || p.minutes >= end - minLeft(s)) return null;
   return { date: p.date, endMs: nowMs + ((end - p.minutes) * 60 - p.seconds) * 1000 };
 }
 
@@ -51,7 +53,7 @@ function nextRun(s, tz, nowMs) {
     if (!days.includes(p.weekday)) continue;
     if (i === 0) {
       const nowMin = localParts(tz, nowMs).minutes;
-      if (nowMin >= start + s.duration_min - MIN_LEFT) continue; // today's window is over
+      if (nowMin >= start + s.duration_min - minLeft(s)) continue; // today's window is over
       return { date: p.date, weekday: p.weekday, start_time: s.start_time, in_days: 0, in_progress: nowMin >= start };
     }
     return { date: p.date, weekday: p.weekday, start_time: s.start_time, in_days: i, in_progress: false };
@@ -73,9 +75,14 @@ async function tick(db, nowMs) {
       : await db.all(`SELECT d.id FROM schedule_drivers sd JOIN drivers d ON d.id = sd.driver_id
           WHERE sd.schedule_id = ? AND d.active = 1 AND d.company_id = ?`, s.id, s.company_id);
     for (const d of drivers) {
-      // Claim today's run for this driver; if it already exists, it was handled earlier today
+      // Claim today's run for this driver. A run that was already sent today is never repeated.
+      // A run marked 'busy' (driver had another open request or session) is tried again on every check,
+      // so the driver gets the scheduled request as soon as that other session ends.
       const claim = await db.get(`INSERT INTO schedule_runs (schedule_id, driver_id, run_date, status, created_at)
-        VALUES (?, ?, ?, 'sending', ?) ON CONFLICT DO NOTHING RETURNING schedule_id`, s.id, d.id, win.date, nowMs);
+        VALUES (?, ?, ?, 'sending', ?)
+        ON CONFLICT (schedule_id, driver_id, run_date) DO UPDATE SET status = 'sending', created_at = EXCLUDED.created_at
+          WHERE schedule_runs.status = 'busy' OR (schedule_runs.status = 'sending' AND schedule_runs.created_at < EXCLUDED.created_at - 120000)
+        RETURNING schedule_id`, s.id, d.id, win.date, nowMs);
       if (!claim) continue;
       const open = await db.get("SELECT id FROM requests WHERE driver_id = ? AND status IN ('pending','active')", d.id);
       if (open) {

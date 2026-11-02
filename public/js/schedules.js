@@ -27,6 +27,22 @@
     return S.t('next_day', { d: dayName(n.weekday), t: n.start_time });
   }
 
+  /* One line per driver for today: what happened with the scheduled request */
+  function runLine(r) {
+    let key, cls;
+    if (r.status === 'busy') { key = 'run_busy'; cls = 'warn'; }
+    else if (r.status === 'sending') { key = 'run_sending'; cls = ''; }
+    else if (r.request_status === 'pending') { key = 'run_pending'; cls = 'warn'; }
+    else if (r.request_status === 'active') { key = 'run_active'; cls = 'ok'; }
+    else if (r.request_status === 'completed') { key = 'run_completed'; cls = 'ok'; }
+    else if (r.request_status === 'declined') { key = 'run_declined'; cls = 'bad'; }
+    else if (r.request_status === 'expired') { key = 'run_expired'; cls = 'bad'; }
+    else if (r.request_status === 'ended_early') { key = 'run_ended_early'; cls = 'bad'; }
+    else if (r.request_status === 'cancelled') { key = 'run_cancelled'; cls = ''; }
+    else { key = 'run_sent'; cls = ''; }
+    return `<div class="run"><span>${S.esc(r.driver_name)}</span><span class="pill ${cls}">${S.t(key)}</span></div>`;
+  }
+
   async function load() {
     try {
       [data, drivers] = await Promise.all([S.api('GET', '/api/sup/schedules'), S.api('GET', '/api/sup/drivers')]);
@@ -56,7 +72,7 @@
         <dl class="kv-list">
           <dt>${S.t('sched_drivers')}</dt><dd>${who || '—'}</dd>
           <dt>${S.t('sched_next')}</dt><dd>${s.active ? nextLabel(s.next_run) : '—'}</dd>
-          ${s.sent_today || s.busy_today ? `<dt>${S.t('sched_today')}</dt><dd>${S.t('sched_today_val', { sent: s.sent_today, busy: s.busy_today })}</dd>` : ''}
+          ${s.today_runs && s.today_runs.length ? `<dt>${S.t('sched_today')}</dt><dd><div class="runs">${s.today_runs.map(runLine).join('')}</div></dd>` : ''}
           ${s.note ? `<dt>${S.t('note_to_driver')}</dt><dd>${S.esc(s.note)}</dd>` : ''}
         </dl>
         ${s.test_mode ? `<span class="faint">${S.t('test_mode_short')}</span>` : ''}
@@ -67,7 +83,7 @@
         </div>
       </div>`;
     }).join('')}</div>
-    <p class="faint" style="margin-top:.8rem">${S.t('sched_tz_note', { tz: data.timezone })}</p>`;
+    <p class="faint" style="margin-top:.8rem">${S.t('sched_tz_note', { tz: data.timezone })}${data.local_time ? ' ' + S.t('sched_now_is', { t: String(Math.floor(data.local_time.minutes / 60)).padStart(2, '0') + ':' + String(data.local_time.minutes % 60).padStart(2, '0') }) : ''}</p>`;
     box.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openEditor(data.schedules.find(s => s.id === Number(b.dataset.edit))));
     box.querySelectorAll('[data-pause]').forEach(b => b.onclick = async () => {
       try { await S.api('PATCH', '/api/sup/schedules/' + b.dataset.pause, { active: b.dataset.on !== '1' }); load(); }
@@ -172,6 +188,8 @@
       }]
     });
   }
+
+  setInterval(() => { if (location.hash === '#schedules' && !document.querySelector('.modal-back')) load(); }, 30000);
 
   S.Schedules = { load, openEditor };
 })();

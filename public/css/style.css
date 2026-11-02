@@ -297,3 +297,6 @@ td .sub { display: block; font-size: .8rem; color: var(--ink-3); }
 .kv-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .driver-pick { display: grid; gap: .45rem; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: .6rem .8rem; background: var(--surface-2); }
 .btn.ghost.danger { color: var(--bad); }
+
+.runs { display: grid; gap: .3rem; }
+.runs .run { display: flex; justify-content: space-between; gap: .5rem; align-items: center; }

@@ -133,10 +133,12 @@ Instead of sending each request by hand, a supervisor can open **Schedules** →
 At the start time Salem sends the request to every driver in the schedule, once per day. Details:
 
 - The session always **ends at the scheduled end time**, even if the driver accepts late. An unanswered request stays open until that end time (instead of the usual 15 minutes).
-- A driver who is already in a session or has an open request is skipped that day (shown as "busy" on the card).
+- A driver who is already in a session or has an open request is shown as "busy", and gets the scheduled request automatically as soon as that other session ends (while the window is still open).
+- Each schedule card shows, for today, what happened for every driver: sent and waiting, monitoring now, busy, declined, not accepted in time, and so on. It also shows the current time in the company's time zone.
 - No request is sent when less than 5 minutes of the window remain.
 - Creating or turning on a schedule whose window is open right now sends today's requests immediately.
 - Times follow the company's **time zone** (Settings, default Asia/Riyadh).
+- **Render free plan:** the server sleeps after about 15 minutes with no visitors, and a sleeping server can't send anything on time. Salem catches up the moment anyone (driver or supervisor) opens it, so a driver who opens Salem at shift start gets the request right away. To have requests waiting *before* drivers open the app, keep the server awake: use a paid instance, or a free uptime service (e.g. UptimeRobot or cron-job.org) that opens `https://your-app.onrender.com/healthz` every 10 minutes.
 - Drivers see their upcoming scheduled sessions on their home screen. Salem has no push notifications yet, so drivers need to open Salem at session time.
 - Pausing stops future sends; deleting keeps past sessions in the history.
 

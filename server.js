@@ -272,18 +272,31 @@ async function maintain() {
   await db.run("UPDATE requests SET status='completed', ended_at=ends_at, end_reason='time_up' WHERE status='active' AND ends_at <= ?", t);
 }
 
-/* Scheduled sessions: check every 30 seconds (one run at a time) */
-let scheduling = false;
+/* Scheduled sessions: checked every 30 seconds, and also right away when a driver or supervisor
+   opens Salem (so a host that was asleep, like Render's free plan, catches up immediately). */
+let scheduling = null, lastSchedRun = 0;
+function catchUpSchedules() {
+  if (now() - lastSchedRun < 10000) return scheduling || Promise.resolve();
+  return runSchedules();
+}
 async function runSchedules() {
-  if (scheduling) return;
-  scheduling = true;
+  if (scheduling) return scheduling;
+  scheduling = runSchedulesNow().finally(() => { scheduling = null; });
+  return scheduling;
+}
+/* After a schedule is saved: wait for any check already running, then run a fresh one that sees the change */
+async function runSchedulesFresh() {
+  if (scheduling) await scheduling;
+  return runSchedules();
+}
+async function runSchedulesNow() {
+  lastSchedRun = now();
   try {
     await maintain(); // expire old requests first, so yesterday's unanswered request doesn't block today's
     const done = await scheduler.tick(db, now());
     const sent = done.filter(x => x.status === 'sent').length;
     if (sent) console.log(`[salem] Scheduled sessions: sent ${sent} request(s)`);
   } catch (e) { console.error('[salem] scheduler error:', e.message); }
-  finally { scheduling = false; }
 }
 
 /* Photo retention */
@@ -599,6 +612,7 @@ function liveRow(r) {
 }
 
 sup.get('/overview', wrap(async (req, res) => {
+  await catchUpSchedules();
   await maintain();
   const cid = req.auth.company_id;
   const company = await db.get('SELECT id, name, code, min_speed_kmh, gaze_seconds, face_lost_seconds FROM companies WHERE id = ?', cid);
@@ -782,9 +796,16 @@ sup.get('/schedules', wrap(async (req, res) => {
       (SELECT COUNT(*) FROM schedule_runs sr WHERE sr.schedule_id = s.id AND sr.run_date = ? AND sr.status = 'sent') AS sent_today,
       (SELECT COUNT(*) FROM schedule_runs sr WHERE sr.schedule_id = s.id AND sr.run_date = ? AND sr.status = 'busy') AS busy_today
     FROM schedules s LEFT JOIN users u ON u.id = s.created_by WHERE s.company_id = ? ORDER BY s.active DESC, s.start_time`, today, today, req.auth.company_id);
+  await catchUpSchedules();
+  const runs = await db.all(`SELECT sr.schedule_id, sr.driver_id, sr.status, d.name AS driver_name, r.status AS request_status
+    FROM schedule_runs sr JOIN schedules s ON s.id = sr.schedule_id JOIN drivers d ON d.id = sr.driver_id
+    LEFT JOIN requests r ON r.id = sr.request_id
+    WHERE s.company_id = ? AND sr.run_date = ? ORDER BY d.name`, req.auth.company_id, today);
   res.json({
     timezone: tz,
+    local_time: scheduler.localParts(tz, now()),
     schedules: rows.map(s => ({
+      today_runs: runs.filter(r => r.schedule_id === s.id),
       ...s,
       days: scheduler.parseDays(s.days),
       driver_ids: s.driver_ids ? s.driver_ids.split(',').map(Number) : [],
@@ -802,7 +823,7 @@ sup.post('/schedules', wrap(async (req, res) => {
     for (const d of v.ids) await t.run('INSERT INTO schedule_drivers (schedule_id, driver_id) VALUES (?, ?)', s.id, d);
     return s.id;
   });
-  await runSchedules(); // send today's requests right away if the window is already open
+  await runSchedulesFresh(); // send today's requests right away if the window is already open
   res.json({ id });
 }));
 
@@ -817,7 +838,7 @@ sup.put('/schedules/:id', wrap(async (req, res) => {
     await t.run('DELETE FROM schedule_drivers WHERE schedule_id = ?', s.id);
     for (const d of v.ids) await t.run('INSERT INTO schedule_drivers (schedule_id, driver_id) VALUES (?, ?)', s.id, d);
   });
-  await runSchedules(); // send today's requests right away if the window is already open
+  await runSchedulesFresh(); // send today's requests right away if the window is already open
   res.json({ ok: true });
 }));
 
@@ -825,7 +846,7 @@ sup.patch('/schedules/:id', wrap(async (req, res) => {
   const { active } = parseBody(req);
   const r = await db.run('UPDATE schedules SET active = ?, updated_at = ? WHERE id = ? AND company_id = ?', active ? 1 : 0, now(), req.params.id, req.auth.company_id);
   if (!r.changes) return res.status(404).json({ error: 'not_found' });
-  if (active) await runSchedules();
+  if (active) await runSchedulesFresh();
   res.json({ ok: true });
 }));
 
@@ -857,6 +878,7 @@ function driverRequest(req, id, statuses) {
 }
 
 drv.get('/state', wrap(async (req, res) => {
+  await catchUpSchedules();
   await maintain();
   const d = await db.get('SELECT id, name, phone, vehicle, active FROM drivers WHERE id = ?', req.auth.id);
   if (!d || !d.active) return res.status(401).json({ error: 'not_signed_in' });
