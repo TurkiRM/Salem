@@ -280,3 +280,20 @@ td .sub { display: block; font-size: .8rem; color: var(--ink-3); }
 
 .sun-note { font-size: .82rem; font-weight: 600; padding: .35rem .6rem; border-radius: 6px; background: var(--info-soft); color: var(--info); }
 .sun-note.limited { background: var(--warn-soft); color: var(--warn); }
+
+/* Schedules */
+.sched-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: .9rem; }
+.sched-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1rem 1.1rem; display: grid; gap: .8rem; align-content: start; min-width: 0; }
+.sched-card.paused { opacity: .62; }
+.sched-card .top { display: flex; justify-content: space-between; gap: .5rem; align-items: flex-start; }
+.sched-card .who b { display: block; font-size: 1.02rem; }
+.sched-card .time { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.sched-card .time .num { font-family: var(--font-mono); font-size: 1.35rem; font-weight: 700; }
+.sched-card .days { display: flex; gap: .3rem; flex-wrap: wrap; }
+.sched-card .days .d { font-size: .74rem; padding: .15rem .45rem; border-radius: 6px; background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--line); }
+.sched-card .days .d.on { background: var(--brand-soft); color: var(--brand); border-color: transparent; font-weight: 600; }
+.kv-list { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .3rem .9rem; font-size: .9rem; }
+.kv-list dt { color: var(--ink-3); }
+.kv-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.driver-pick { display: grid; gap: .45rem; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: .6rem .8rem; background: var(--surface-2); }
+.btn.ghost.danger { color: var(--bad); }

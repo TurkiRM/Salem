@@ -24,6 +24,7 @@
       if (act === 'new-request') openRequestModal(a.dataset.driver ? Number(a.dataset.driver) : null);
       if (act === 'new-driver') openDriverModal();
       if (act === 'new-sup') openSupModal();
+      if (act === 'new-schedule') S.Schedules.openEditor(null);
     });
     S.onLangChange = () => render();
     buildFilters();
@@ -34,7 +35,7 @@
 
   function route() {
     const v = (location.hash || '#overview').slice(1);
-    state.view = ['overview', 'alerts', 'drivers', 'history', 'settings'].includes(v) ? v : 'overview';
+    state.view = ['overview', 'alerts', 'drivers', 'schedules', 'history', 'settings'].includes(v) ? v : 'overview';
     document.querySelectorAll('[data-page]').forEach(p => (p.hidden = p.dataset.page !== state.view));
     document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.dataset.view === state.view));
     $('#rail').classList.remove('open');
@@ -49,6 +50,7 @@
     if (state.view === 'alerts') { buildFilters(); loadAlerts(); }
     if (state.view === 'drivers') loadDrivers().then(renderDrivers);
     if (state.view === 'history') loadHistory();
+    if (state.view === 'schedules') S.Schedules.load();
     if (state.view === 'settings') loadSettings();
   }
 
@@ -95,7 +97,8 @@
       return `<div class="live-card s-pending">
         <div class="top"><div class="who"><b>${S.esc(r.driver_name)}</b><span class="faint">${S.esc(r.driver_vehicle || r.driver_phone)}</span></div>
         <span class="pill warn">${S.t('st_pending')}</span></div>
-        <p class="muted">${S.t('waiting_driver', { d: S.durationLabel(r.duration_min) })}</p>
+        <p class="muted">${r.scheduled_end ? S.t('waiting_driver_sched', { t: S.fmtTime(r.scheduled_end) }) : S.t('waiting_driver', { d: S.durationLabel(r.duration_min) })}</p>
+        ${r.schedule_id ? `<span class="pill info" style="justify-self:start">${S.t('scheduled')} · ${S.esc(r.note || '')}</span>` : ''}
         <div class="row" style="justify-content:space-between"><span class="faint">${S.t('sent')} ${S.ago(r.created_at)}</span>
         <button class="btn sm danger" data-cancel="${r.id}">${S.t('cancel')}</button></div></div>`;
     }
@@ -370,7 +373,7 @@
     if (!list.length) { $('#historyTable').innerHTML = `<div class="empty">${S.icons.history}<span>${S.t('no_history')}</span></div>`; return; }
     $('#historyTable').innerHTML = `<table><thead><tr><th>${S.t('driver')}</th><th>${S.t('status')}</th><th>${S.t('duration')}</th><th>${S.t('started')}</th><th>${S.t('ev_gaze')}</th><th>${S.t('alerts')}</th><th>${S.t('requested_by')}</th></tr></thead>
       <tbody>${list.map(r => `<tr>
-        <td><b>${S.esc(r.driver_name)}</b>${r.test_mode ? `<span class="sub">${S.t('test_mode_short')}</span>` : ''}</td>
+        <td><b>${S.esc(r.driver_name)}</b>${r.schedule_id || r.scheduled_end ? `<span class="sub">${S.t('scheduled')}${r.note ? ' · ' + S.esc(r.note) : ''}</span>` : ''}${r.test_mode ? `<span class="sub">${S.t('test_mode_short')}</span>` : ''}</td>
         <td><span class="pill ${S.STATUS_PILL[r.status] || ''}">${S.t('st_' + r.status)}</span></td>
         <td>${S.durationLabel(r.duration_min)}${r.sunglasses_ms >= 60000 ? `<span class="sub">${S.t('sun_minutes', { n: Math.round(r.sunglasses_ms / 60000) })}</span>` : ''}</td>
         <td>${r.started_at ? S.fmtDateTime(r.started_at) : `<span class="faint">${S.t('sent')} ${S.fmtDateTime(r.created_at)}</span>`}</td>
@@ -389,12 +392,12 @@
   async function loadSettings() {
     try {
       const s = await S.api('GET', '/api/sup/settings');
-      $('#sGaze').value = s.gaze_seconds; $('#sSpeed').value = s.min_speed_kmh; $('#sFace').value = s.face_lost_seconds;
+      $('#sGaze').value = s.gaze_seconds; $('#sSpeed').value = s.min_speed_kmh; $('#sFace').value = s.face_lost_seconds; $('#sTz').value = s.timezone || 'Asia/Riyadh';
       $('#sCode').textContent = s.code; $('#sLink').textContent = location.origin + '/driver';
     } catch (_) {}
     $('#settingsForm').onsubmit = async e => {
       e.preventDefault();
-      try { await S.api('PUT', '/api/sup/settings', { gaze_seconds: Number($('#sGaze').value), min_speed_kmh: Number($('#sSpeed').value), face_lost_seconds: Number($('#sFace').value) }); S.toast(S.t('saved')); }
+      try { await S.api('PUT', '/api/sup/settings', { gaze_seconds: Number($('#sGaze').value), min_speed_kmh: Number($('#sSpeed').value), face_lost_seconds: Number($('#sFace').value), timezone: $('#sTz').value }); S.toast(S.t('saved')); }
       catch (x) { S.toast(S.errorText(x), 'bad'); }
     };
     $('#pwForm').onsubmit = async e => {

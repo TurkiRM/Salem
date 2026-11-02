@@ -122,6 +122,24 @@ Tip for drivers: from the browser menu choose **Add to Home screen**, so Salem o
 | `REQUEST_EXPIRY_MIN` | 15 | Minutes a driver has to accept before the request expires |
 | `COOKIE_SECURE` | false | Set to `true` behind HTTPS |
 
+### Scheduled sessions
+
+Instead of sending each request by hand, a supervisor can open **Schedules** → **New schedule** and set:
+
+- **Days** (quick picks: Sun–Thu, Sat–Thu, every day), **start time** and **duration** (e.g. 08:00 for 4 hours → ends 12:00)
+- **Drivers**: all drivers (including ones added later) or a chosen list
+- an optional message for the driver, and test mode
+
+At the start time Salem sends the request to every driver in the schedule, once per day. Details:
+
+- The session always **ends at the scheduled end time**, even if the driver accepts late. An unanswered request stays open until that end time (instead of the usual 15 minutes).
+- A driver who is already in a session or has an open request is skipped that day (shown as "busy" on the card).
+- No request is sent when less than 5 minutes of the window remain.
+- Creating or turning on a schedule whose window is open right now sends today's requests immediately.
+- Times follow the company's **time zone** (Settings, default Asia/Riyadh).
+- Drivers see their upcoming scheduled sessions on their home screen. Salem has no push notifications yet, so drivers need to open Salem at session time.
+- Pausing stops future sends; deleting keeps past sessions in the history.
+
 ### Email notifications (optional)
 
 Salem sends these emails, each in Arabic and English:
@@ -160,13 +178,14 @@ Per-company settings (in the panel under **Settings**): seconds looking at the s
 
 ```
 server.js                 API, auth, PostgreSQL database, photo storage
+scheduler.js              scheduled sessions: works out when each schedule is due and sends the requests
 mailer.js                 email notifications (Resend or SMTP) and their Arabic/English templates
 scripts/fetch-model.js    downloads the MediaPipe face model to public/models
 scripts/import-sqlite.js  one-time copy of data from the old SQLite version
 public/index.html         sign-in for admin and supervisors
 public/register.html      company self-registration
 public/admin.html         platform admin (registration requests, companies, supervisors)
-public/panel.html         supervisor panel  (+ js/panel.js)
+public/panel.html         supervisor panel  (+ js/panel.js, js/schedules.js)
 public/driver.html        driver phone screen (+ js/driver.js, css/driver.css)
 public/js/gaze.js         eye-gaze detector (MediaPipe + calibration + reading pattern)
 public/js/i18n.js         Arabic / English text

@@ -73,7 +73,8 @@
     } else if (d.pending.length) {
       box.innerHTML = d.pending.map(r => `<div class="req-card alerting">
         <span class="pill warn live">${S.t('new_request')}</span>
-        <div><span class="label">${S.t('watch_for')}</span><div class="big">${S.durationLabel(r.duration_min)}</div></div>
+        <div><span class="label">${S.t('watch_for')}</span><div class="big">${r.scheduled_end ? S.t('until_time', { t: S.fmtTime(r.scheduled_end) }) : S.durationLabel(r.duration_min)}</div></div>
+        ${r.schedule_id ? `<span class="pill info" style="justify-self:start">${S.t('scheduled')}</span>` : ''}
         <p class="muted">${S.t('requested_by_x', { name: S.esc(r.supervisor_name || S.t('supervisor')) })} · ${S.ago(r.created_at + st.serverSkew)}</p>
         ${r.note ? `<div class="note">${S.esc(r.note)}</div>` : ''}
         ${r.test_mode ? `<span class="faint">${S.t('test_mode_short')}</span>` : ''}
@@ -89,8 +90,14 @@
     } else {
       box.innerHTML = `<div class="req-card"><div class="empty" style="padding:1.2rem">${S.icons.shield}<b>${S.t('no_requests')}</b><span>${S.t('no_requests_hint')}</span></div></div>`;
     }
+    const dn = n => n.in_days === 0 ? S.t('today') : n.in_days === 1 ? S.t('tomorrow') : S.t('day_' + n.weekday);
+    const up = (d.upcoming || []).filter(u => !(u.next.in_progress && (d.pending.length || d.active)));
+    $('#hUpcoming').innerHTML = up.length ? `<p class="label" style="margin-bottom:.3rem">${S.t('upcoming_sessions')}</p>` + up.map(u =>
+      `<div class="hist-row"><span><b>${S.esc(u.name)}</b><br><span class="faint">${S.durationLabel(u.duration_min)}</span></span>
+       <span class="num" style="text-align:end">${u.next.in_progress ? S.t('next_now') : dn(u.next) + ' ' + u.next.start_time}</span></div>`).join('') +
+      `<p class="faint" style="margin-top:.4rem">${S.t('upcoming_hint')}</p>` : '';
     $('#hHistory').innerHTML = d.history.length ? `<p class="label" style="margin-bottom:.3rem">${S.t('recent_sessions')}</p>` + d.history.map(h =>
-      `<div class="hist-row"><span>${S.fmtDateTime(h.started_at || h.ended_at)} · ${S.durationLabel(h.duration_min)}</span>
+      `<div class="hist-row"><span>${S.fmtDateTime(h.started_at || h.ended_at || h.created_at)} · ${S.durationLabel(h.duration_min)}</span>
        <span><span class="pill ${S.STATUS_PILL[h.status] || ''}">${S.t('st_' + h.status)}</span> ${h.event_count ? `<b class="num" style="color:var(--bad)">${h.event_count}</b>` : ''}</span></div>`).join('') : '';
     show('home');
     homePoll = setInterval(() => { if (!$('[data-scr="home"]').hidden) loadHome(); else clearInterval(homePoll); }, 15000);

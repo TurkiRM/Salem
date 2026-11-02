@@ -16,6 +16,7 @@
       <a href="#overview" data-view="overview"><span data-icon="live"></span><span data-i18n="nav_overview">المتابعة المباشرة</span></a>
       <a href="#alerts" data-view="alerts"><span data-icon="alert"></span><span data-i18n="nav_alerts">المخالفات</span><span class="count" id="reviewCount" hidden></span></a>
       <a href="#drivers" data-view="drivers"><span data-icon="users"></span><span data-i18n="nav_drivers">السائقون</span></a>
+      <a href="#schedules" data-view="schedules"><span data-icon="clock"></span><span data-i18n="nav_schedules">الجدولة</span></a>
       <a href="#history" data-view="history"><span data-icon="history"></span><span data-i18n="nav_history">سجل الطلبات</span></a>
       <a href="#settings" data-view="settings"><span data-icon="settings"></span><span data-i18n="nav_settings">الإعدادات</span></a>
     </nav>
@@ -72,6 +73,14 @@
       </section>
 
       <!-- HISTORY -->
+      <section data-page="schedules" class="page" hidden>
+        <div class="page-head">
+          <div><h1 data-i18n="nav_schedules">الجدولة</h1><p data-i18n="schedules_sub">جلسات مراقبة متكررة تُرسل للسائقين تلقائياً في أيام ووقت محددين.</p></div>
+          <button class="btn primary" data-action="new-schedule"><span data-icon="plus" style="width:18px;display:inline-flex"></span><span data-i18n="new_schedule">جدولة جديدة</span></button>
+        </div>
+        <div id="schedList"></div>
+      </section>
+
       <section data-page="history" class="page" hidden>
         <div class="page-head">
           <div><h1 data-i18n="nav_history">سجل الطلبات</h1><p data-i18n="history_sub">كل طلبات المراقبة وحالتها وعدد المخالفات في كل جلسة.</p></div>
@@ -90,6 +99,15 @@
             <p class="faint" data-i18n="min_speed_hint">تحت هذه السرعة لا تُسجَّل مخالفات (مثل الوقوف عند الإشارة أو الاصطفاف).</p>
             <label class="field"><span data-i18n="face_lost_seconds">مدة اختفاء الوجه قبل التسجيل (ثوانٍ)</span><input id="sFace" type="number" min="0" step="1" dir="ltr"></label>
             <p class="faint" data-i18n="face_lost_hint">إذا لم تظهر عينا السائق للكاميرا طوال هذه المدة أثناء الحركة (تغطية الكاميرا أو تحويل الجوال) تُسجَّل مخالفة "الوجه غير ظاهر". اكتب 0 لإيقاف هذا التنبيه.</p>
+            <label class="field"><span data-i18n="timezone">المنطقة الزمنية للجدولة</span><select id="sTz">
+              <option value="Asia/Riyadh">Asia/Riyadh — السعودية</option>
+              <option value="Asia/Dubai">Asia/Dubai — الإمارات وعُمان</option>
+              <option value="Asia/Kuwait">Asia/Kuwait — الكويت</option>
+              <option value="Asia/Qatar">Asia/Qatar — قطر</option>
+              <option value="Asia/Bahrain">Asia/Bahrain — البحرين</option>
+              <option value="Asia/Amman">Asia/Amman — الأردن</option>
+              <option value="Africa/Cairo">Africa/Cairo — مصر</option>
+            </select></label>
             <div class="row"><button class="btn primary" type="submit" data-i18n="save">حفظ</button></div>
           </form>
         </div>
@@ -123,6 +141,7 @@
 </div>
 <script src="/js/i18n.js"></script>
 <script src="/js/common.js"></script>
+<script src="/js/schedules.js"></script>
 <script src="/js/panel.js"></script>
 </body>
 </html>

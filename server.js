@@ -13,6 +13,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool, types } = require('pg');
 const mailer = require('./mailer');
+const scheduler = require('./scheduler');
 
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -183,6 +184,44 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS reviewed_at BIGINT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS review_note TEXT DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at BIGINT;
 
+-- Scheduled monitoring sessions
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Asia/Riyadh';
+CREATE TABLE IF NOT EXISTS schedules (
+  id SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  days TEXT NOT NULL,                -- weekdays, 0 = Sunday … 6 = Saturday, e.g. '0,1,2,3,4'
+  start_time TEXT NOT NULL,          -- 'HH:MM' in the company's time zone
+  duration_min INTEGER NOT NULL,
+  all_drivers INTEGER NOT NULL DEFAULT 0,
+  test_mode INTEGER NOT NULL DEFAULT 0,
+  note TEXT DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT
+);
+CREATE TABLE IF NOT EXISTS schedule_drivers (
+  schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  PRIMARY KEY (schedule_id, driver_id)
+);
+CREATE TABLE IF NOT EXISTS schedule_runs (
+  schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  run_date TEXT NOT NULL,
+  status TEXT NOT NULL,
+  request_id INTEGER,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (schedule_id, driver_id, run_date)
+);
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS schedule_id INTEGER REFERENCES schedules(id) ON DELETE SET NULL;
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS scheduled_end BIGINT;
+CREATE INDEX IF NOT EXISTS idx_sched_company ON schedules(company_id);
+ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schedule_drivers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schedule_runs ENABLE ROW LEVEL SECURITY;
+
 -- Supabase (and similar) expose the public schema through an automatic web API.
 -- Row level security with no policies blocks that API completely; Salem's own
 -- server connects as the table owner, which is not affected.
@@ -228,8 +267,23 @@ async function init() {
 /* Lazy status maintenance: expire pending requests, close finished sessions */
 async function maintain() {
   const t = now();
-  await db.run("UPDATE requests SET status='expired' WHERE status='pending' AND created_at < ?", t - REQUEST_EXPIRY_MS);
+  await db.run(`UPDATE requests SET status='expired' WHERE status='pending'
+    AND ((scheduled_end IS NULL AND created_at < ?) OR (scheduled_end IS NOT NULL AND scheduled_end <= ?))`, t - REQUEST_EXPIRY_MS, t);
   await db.run("UPDATE requests SET status='completed', ended_at=ends_at, end_reason='time_up' WHERE status='active' AND ends_at <= ?", t);
+}
+
+/* Scheduled sessions: check every 30 seconds (one run at a time) */
+let scheduling = false;
+async function runSchedules() {
+  if (scheduling) return;
+  scheduling = true;
+  try {
+    await maintain(); // expire old requests first, so yesterday's unanswered request doesn't block today's
+    const done = await scheduler.tick(db, now());
+    const sent = done.filter(x => x.status === 'sent').length;
+    if (sent) console.log(`[salem] Scheduled sessions: sent ${sent} request(s)`);
+  } catch (e) { console.error('[salem] scheduler error:', e.message); }
+  finally { scheduling = false; }
 }
 
 /* Photo retention */
@@ -667,17 +721,21 @@ sup.patch('/events/:id', wrap(async (req, res) => {
 }));
 
 sup.get('/settings', wrap(async (req, res) => {
-  res.json(await db.get('SELECT name, code, min_speed_kmh, gaze_seconds, face_lost_seconds FROM companies WHERE id = ?', req.auth.company_id));
+  res.json(await db.get('SELECT name, code, min_speed_kmh, gaze_seconds, face_lost_seconds, timezone FROM companies WHERE id = ?', req.auth.company_id));
 }));
 
 sup.put('/settings', wrap(async (req, res) => {
-  const { min_speed_kmh, gaze_seconds, face_lost_seconds } = parseBody(req);
+  const { min_speed_kmh, gaze_seconds, face_lost_seconds, timezone } = parseBody(req);
   const s = Math.min(60, Math.max(0, Number(min_speed_kmh)));
   const g = Math.min(10, Math.max(1, Number(gaze_seconds)));
   // Face not visible: any number of seconds the company wants; 0 turns it off
   const f = Math.min(86400, Math.max(0, Number(face_lost_seconds)));
   if (Number.isNaN(s) || Number.isNaN(g) || Number.isNaN(f)) return res.status(400).json({ error: 'bad_values' });
   await db.run('UPDATE companies SET min_speed_kmh = ?, gaze_seconds = ?, face_lost_seconds = ? WHERE id = ?', s, g, f, req.auth.company_id);
+  if (timezone !== undefined) {
+    if (!scheduler.validTimeZone(timezone)) return res.status(400).json({ error: 'bad_values' });
+    await db.run('UPDATE companies SET timezone = ? WHERE id = ?', String(timezone), req.auth.company_id);
+  }
   res.json({ ok: true });
 }));
 
@@ -693,6 +751,88 @@ sup.post('/team', wrap(async (req, res) => {
   const r = await db.get('INSERT INTO users (company_id, role, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
     req.auth.company_id, 'supervisor', String(name).trim(), String(email).trim(), bcrypt.hashSync(String(password), 10), now());
   res.json({ id: r.id });
+}));
+
+/* ---------- Schedules (recurring monitoring sessions) */
+async function readSchedule(req) {
+  const b = parseBody(req);
+  const name = String(b.name || '').trim().slice(0, 80);
+  const days = [...new Set((Array.isArray(b.days) ? b.days : []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort();
+  const start = String(b.start_time || '');
+  const dur = Math.round(Number(b.duration_min));
+  if (!name || !days.length || !/^([01]\d|2[0-3]):[0-5]\d$/.test(start)) return { error: 'missing_fields' };
+  if (!dur || dur < 5 || dur > 720) return { error: 'bad_duration' };
+  const all = b.all_drivers ? 1 : 0;
+  let ids = [];
+  if (!all) {
+    ids = [...new Set((Array.isArray(b.driver_ids) ? b.driver_ids : []).map(Number).filter(Number.isInteger))];
+    if (!ids.length) return { error: 'no_drivers' };
+    const ok = await db.all(`SELECT id FROM drivers WHERE company_id = ? AND id IN (${ids.map(() => '?').join(',')})`, req.auth.company_id, ...ids);
+    if (ok.length !== ids.length) return { error: 'not_found' };
+  }
+  return { name, days: days.join(','), start, dur, all, ids, test: b.test_mode ? 1 : 0, note: String(b.note || '').slice(0, 300) };
+}
+
+sup.get('/schedules', wrap(async (req, res) => {
+  const c = await db.get('SELECT timezone FROM companies WHERE id = ?', req.auth.company_id);
+  const tz = c.timezone || 'Asia/Riyadh';
+  const today = scheduler.localParts(tz, now()).date;
+  const rows = await db.all(`SELECT s.*, u.name AS created_by_name,
+      COALESCE((SELECT string_agg(driver_id::text, ',') FROM schedule_drivers sd WHERE sd.schedule_id = s.id), '') AS driver_ids,
+      (SELECT COUNT(*) FROM schedule_runs sr WHERE sr.schedule_id = s.id AND sr.run_date = ? AND sr.status = 'sent') AS sent_today,
+      (SELECT COUNT(*) FROM schedule_runs sr WHERE sr.schedule_id = s.id AND sr.run_date = ? AND sr.status = 'busy') AS busy_today
+    FROM schedules s LEFT JOIN users u ON u.id = s.created_by WHERE s.company_id = ? ORDER BY s.active DESC, s.start_time`, today, today, req.auth.company_id);
+  res.json({
+    timezone: tz,
+    schedules: rows.map(s => ({
+      ...s,
+      days: scheduler.parseDays(s.days),
+      driver_ids: s.driver_ids ? s.driver_ids.split(',').map(Number) : [],
+      next_run: s.active ? scheduler.nextRun(s, tz, now()) : null
+    }))
+  });
+}));
+
+sup.post('/schedules', wrap(async (req, res) => {
+  const v = await readSchedule(req);
+  if (v.error) return res.status(400).json({ error: v.error });
+  const id = await db.tx(async t => {
+    const s = await t.get(`INSERT INTO schedules (company_id, name, days, start_time, duration_min, all_drivers, test_mode, note, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, req.auth.company_id, v.name, v.days, v.start, v.dur, v.all, v.test, v.note, req.auth.id, now());
+    for (const d of v.ids) await t.run('INSERT INTO schedule_drivers (schedule_id, driver_id) VALUES (?, ?)', s.id, d);
+    return s.id;
+  });
+  await runSchedules(); // send today's requests right away if the window is already open
+  res.json({ id });
+}));
+
+sup.put('/schedules/:id', wrap(async (req, res) => {
+  const s = await db.get('SELECT id FROM schedules WHERE id = ? AND company_id = ?', req.params.id, req.auth.company_id);
+  if (!s) return res.status(404).json({ error: 'not_found' });
+  const v = await readSchedule(req);
+  if (v.error) return res.status(400).json({ error: v.error });
+  await db.tx(async t => {
+    await t.run('UPDATE schedules SET name = ?, days = ?, start_time = ?, duration_min = ?, all_drivers = ?, test_mode = ?, note = ?, updated_at = ? WHERE id = ?',
+      v.name, v.days, v.start, v.dur, v.all, v.test, v.note, now(), s.id);
+    await t.run('DELETE FROM schedule_drivers WHERE schedule_id = ?', s.id);
+    for (const d of v.ids) await t.run('INSERT INTO schedule_drivers (schedule_id, driver_id) VALUES (?, ?)', s.id, d);
+  });
+  await runSchedules(); // send today's requests right away if the window is already open
+  res.json({ ok: true });
+}));
+
+sup.patch('/schedules/:id', wrap(async (req, res) => {
+  const { active } = parseBody(req);
+  const r = await db.run('UPDATE schedules SET active = ?, updated_at = ? WHERE id = ? AND company_id = ?', active ? 1 : 0, now(), req.params.id, req.auth.company_id);
+  if (!r.changes) return res.status(404).json({ error: 'not_found' });
+  if (active) await runSchedules();
+  res.json({ ok: true });
+}));
+
+sup.delete('/schedules/:id', wrap(async (req, res) => {
+  const r = await db.run('DELETE FROM schedules WHERE id = ? AND company_id = ?', req.params.id, req.auth.company_id);
+  if (!r.changes) return res.status(404).json({ error: 'not_found' });
+  res.json({ ok: true });
 }));
 
 app.use('/api/sup', sup);
@@ -721,13 +861,18 @@ drv.get('/state', wrap(async (req, res) => {
   const d = await db.get('SELECT id, name, phone, vehicle, active FROM drivers WHERE id = ?', req.auth.id);
   if (!d || !d.active) return res.status(401).json({ error: 'not_signed_in' });
   const company = await db.get('SELECT name, min_speed_kmh, gaze_seconds, face_lost_seconds FROM companies WHERE id = ?', req.auth.company_id);
-  const pending = await db.all(`SELECT r.id, r.duration_min, r.note, r.test_mode, r.created_at, u.name AS supervisor_name
+  const pending = await db.all(`SELECT r.id, r.duration_min, r.note, r.test_mode, r.created_at, r.schedule_id, r.scheduled_end, u.name AS supervisor_name
     FROM requests r LEFT JOIN users u ON u.id = r.supervisor_id WHERE r.driver_id = ? AND r.status = 'pending' ORDER BY r.created_at DESC`, d.id);
   const active = (await db.get("SELECT id, duration_min, note, test_mode, started_at, ends_at FROM requests WHERE driver_id = ? AND status = 'active'", d.id)) || null;
-  const history = await db.all(`SELECT r.id, r.status, r.duration_min, r.started_at, r.ended_at,
+  const history = await db.all(`SELECT r.id, r.status, r.duration_min, r.started_at, r.ended_at, r.created_at, r.note,
       (SELECT COUNT(*) FROM events e WHERE e.request_id = r.id) AS event_count
     FROM requests r WHERE r.driver_id = ? AND r.status NOT IN ('pending','active') ORDER BY r.created_at DESC LIMIT 5`, d.id);
-  res.json({ driver: d, company, pending, active, history, server_time: now(), expiry_ms: REQUEST_EXPIRY_MS });
+  const tz = (await db.get('SELECT timezone FROM companies WHERE id = ?', req.auth.company_id)).timezone || 'Asia/Riyadh';
+  const scheds = await db.all(`SELECT s.* FROM schedules s WHERE s.company_id = ? AND s.active = 1
+      AND (s.all_drivers = 1 OR EXISTS (SELECT 1 FROM schedule_drivers sd WHERE sd.schedule_id = s.id AND sd.driver_id = ?))`, req.auth.company_id, d.id);
+  const upcoming = scheds.map(s => ({ name: s.name, duration_min: s.duration_min, next: scheduler.nextRun(s, tz, now()) }))
+    .filter(x => x.next).sort((a, b) => (a.next.date + a.next.start_time).localeCompare(b.next.date + b.next.start_time)).slice(0, 3);
+  res.json({ driver: d, company, pending, active, history, upcoming, server_time: now(), expiry_ms: REQUEST_EXPIRY_MS });
 }));
 
 drv.post('/requests/:id/accept', wrap(async (req, res) => {
@@ -735,9 +880,11 @@ drv.post('/requests/:id/accept', wrap(async (req, res) => {
   const r = await driverRequest(req, req.params.id, ['pending']);
   if (!r) return res.status(404).json({ error: 'not_found' });
   const t = now();
+  // Scheduled sessions end at the scheduled end time, even if accepted late
+  const endsAt = r.scheduled_end ? Math.min(t + r.duration_min * 60000, r.scheduled_end) : t + r.duration_min * 60000;
   await db.run("UPDATE requests SET status = 'active', responded_at = ?, started_at = ?, ends_at = ?, last_seen_at = ? WHERE id = ?",
-    t, t, t + r.duration_min * 60000, t, r.id);
-  res.json({ ok: true, started_at: t, ends_at: t + r.duration_min * 60000 });
+    t, t, endsAt, t, r.id);
+  res.json({ ok: true, started_at: t, ends_at: endsAt });
 }));
 
 drv.post('/requests/:id/decline', wrap(async (req, res) => {
@@ -827,6 +974,8 @@ init()
   .then(() => {
     purgeSnapshots();
     setInterval(purgeSnapshots, 6 * 3600 * 1000).unref();
+    runSchedules();
+    setInterval(runSchedules, 30 * 1000).unref();
     app.listen(PORT, () => console.log(`[salem] Running on http://localhost:${PORT}`));
   })
   .catch(e => {
