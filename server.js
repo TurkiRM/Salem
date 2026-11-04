@@ -14,6 +14,7 @@ const jwt = require('jsonwebtoken');
 const { Pool, types } = require('pg');
 const mailer = require('./mailer');
 const scheduler = require('./scheduler');
+const whatsapp = require('./whatsapp');
 
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -26,6 +27,8 @@ const HEARTBEAT_STALE_MS = 45 * 1000;
 const ADMIN_NOTIFY = (process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '').split(',').map(x => x.trim()).filter(Boolean);
 // Public address used in email links; falls back to the address the request came in on
 const appUrl = req => (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+// For messages sent by background jobs (no visitor request to read the address from)
+const APP_URL_BASE = (process.env.APP_URL || (process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`)).replace(/\/+$/, '');
 
 if (!DATABASE_URL) {
   console.error('[salem] DATABASE_URL is not set. Add your Postgres connection string to .env (see README).');
@@ -217,6 +220,19 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
 );
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS schedule_id INTEGER REFERENCES schedules(id) ON DELETE SET NULL;
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS scheduled_end BIGINT;
+-- WhatsApp reminders before scheduled sessions
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS reminder_minutes INTEGER NOT NULL DEFAULT 10;
+CREATE TABLE IF NOT EXISTS schedule_reminders (
+  schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+  driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  run_date TEXT NOT NULL,
+  status TEXT NOT NULL,
+  message_id TEXT,
+  error TEXT,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (schedule_id, driver_id, run_date)
+);
+ALTER TABLE schedule_reminders ENABLE ROW LEVEL SECURITY;
 CREATE INDEX IF NOT EXISTS idx_sched_company ON schedules(company_id);
 ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedule_drivers ENABLE ROW LEVEL SECURITY;
@@ -293,6 +309,14 @@ async function runSchedulesNow() {
   lastSchedRun = now();
   try {
     await maintain(); // expire old requests first, so yesterday's unanswered request doesn't block today's
+    // WhatsApp reminders a few minutes before each scheduled session (only when WhatsApp is set up)
+    if (whatsapp.status().enabled) {
+      const reminded = await scheduler.remind(db, now(), (driver, sched, startTime) =>
+        whatsapp.sendTemplate(driver.phone, [driver.name, sched.name, startTime, `${APP_URL_BASE}/driver`]));
+      const ok = reminded.filter(x => x.status === 'sent').length, bad = reminded.filter(x => x.status === 'failed');
+      if (ok) console.log(`[salem] WhatsApp reminders sent: ${ok}`);
+      for (const f of bad) console.error(`[salem] WhatsApp reminder failed (driver ${f.driver}): ${f.error}`);
+    }
     const done = await scheduler.tick(db, now());
     const sent = done.filter(x => x.status === 'sent').length;
     if (sent) console.log(`[salem] Scheduled sessions: sent ${sent} request(s)`);
@@ -552,6 +576,24 @@ admin.post('/companies/:id/review', wrap(async (req, res) => {
 }));
 
 /* Email settings check + test message from the admin dashboard */
+admin.get('/whatsapp-status', wrap(async (req, res) => {
+  const counts = await db.get(`SELECT
+      (SELECT COUNT(*) FROM schedule_reminders WHERE status = 'sent' AND created_at > ?) AS sent_7d,
+      (SELECT COUNT(*) FROM schedule_reminders WHERE status = 'failed' AND created_at > ?) AS failed_7d`, now() - 7 * 86400000, now() - 7 * 86400000);
+  const lastError = await db.get("SELECT error, created_at FROM schedule_reminders WHERE status = 'failed' ORDER BY created_at DESC LIMIT 1");
+  res.json({ ...whatsapp.status(), ...counts, last_error: lastError || null });
+}));
+admin.post('/whatsapp-test', wrap(async (req, res) => {
+  const { phone } = parseBody(req);
+  if (!whatsapp.status().enabled) return res.status(400).json({ error: 'whatsapp_not_configured' });
+  try {
+    const r = await whatsapp.sendTemplate(phone, ['سالم', 'رسالة تجربة', '08:00', `${appUrl(req)}/driver`]);
+    res.json({ ok: true, to: r.to });
+  } catch (e) {
+    res.status(502).json({ error: e.message === 'bad_phone' ? 'bad_phone' : 'whatsapp_failed', detail: String(e.message).slice(0, 300) });
+  }
+}));
+
 admin.get('/email-status', wrap(async (req, res) => {
   res.json({ ...mailer.status(), notify: ADMIN_NOTIFY });
 }));
@@ -735,17 +777,23 @@ sup.patch('/events/:id', wrap(async (req, res) => {
 }));
 
 sup.get('/settings', wrap(async (req, res) => {
-  res.json(await db.get('SELECT name, code, min_speed_kmh, gaze_seconds, face_lost_seconds, timezone FROM companies WHERE id = ?', req.auth.company_id));
+  const c = await db.get('SELECT name, code, min_speed_kmh, gaze_seconds, face_lost_seconds, timezone, reminder_minutes FROM companies WHERE id = ?', req.auth.company_id);
+  res.json({ ...c, whatsapp_enabled: whatsapp.status().enabled });
 }));
 
 sup.put('/settings', wrap(async (req, res) => {
-  const { min_speed_kmh, gaze_seconds, face_lost_seconds, timezone } = parseBody(req);
+  const { min_speed_kmh, gaze_seconds, face_lost_seconds, timezone, reminder_minutes } = parseBody(req);
   const s = Math.min(60, Math.max(0, Number(min_speed_kmh)));
   const g = Math.min(10, Math.max(1, Number(gaze_seconds)));
   // Face not visible: any number of seconds the company wants; 0 turns it off
   const f = Math.min(86400, Math.max(0, Number(face_lost_seconds)));
   if (Number.isNaN(s) || Number.isNaN(g) || Number.isNaN(f)) return res.status(400).json({ error: 'bad_values' });
   await db.run('UPDATE companies SET min_speed_kmh = ?, gaze_seconds = ?, face_lost_seconds = ? WHERE id = ?', s, g, f, req.auth.company_id);
+  if (reminder_minutes !== undefined) {
+    const rm = Math.round(Number(reminder_minutes));
+    if (!Number.isFinite(rm) || rm < 0 || rm > 120) return res.status(400).json({ error: 'bad_values' });
+    await db.run('UPDATE companies SET reminder_minutes = ? WHERE id = ?', rm, req.auth.company_id);
+  }
   if (timezone !== undefined) {
     if (!scheduler.validTimeZone(timezone)) return res.status(400).json({ error: 'bad_values' });
     await db.run('UPDATE companies SET timezone = ? WHERE id = ?', String(timezone), req.auth.company_id);
@@ -801,11 +849,19 @@ sup.get('/schedules', wrap(async (req, res) => {
     FROM schedule_runs sr JOIN schedules s ON s.id = sr.schedule_id JOIN drivers d ON d.id = sr.driver_id
     LEFT JOIN requests r ON r.id = sr.request_id
     WHERE s.company_id = ? AND sr.run_date = ? ORDER BY d.name`, req.auth.company_id, today);
+  // Reminders for today's session, and for tomorrow's (a session just after midnight is reminded the evening before)
+  const tomorrow = scheduler.localParts(tz, now() + 86400000).date;
+  const reminders = await db.all(`SELECT sr.schedule_id, sr.driver_id, sr.status, sr.error, sr.run_date, d.name AS driver_name
+    FROM schedule_reminders sr JOIN schedules s ON s.id = sr.schedule_id JOIN drivers d ON d.id = sr.driver_id
+    WHERE s.company_id = ? AND sr.run_date IN (?, ?) ORDER BY d.name`, req.auth.company_id, today, tomorrow);
+  const comp = await db.get('SELECT reminder_minutes FROM companies WHERE id = ?', req.auth.company_id);
   res.json({
     timezone: tz,
+    whatsapp: { enabled: whatsapp.status().enabled, minutes: comp.reminder_minutes },
     local_time: scheduler.localParts(tz, now()),
     schedules: rows.map(s => ({
       today_runs: runs.filter(r => r.schedule_id === s.id),
+      reminders: reminders.filter(r => r.schedule_id === s.id),
       ...s,
       days: scheduler.parseDays(s.days),
       driver_ids: s.driver_ids ? s.driver_ids.split(',').map(Number) : [],

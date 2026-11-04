@@ -100,4 +100,52 @@ async function tick(db, nowMs) {
   return done;
 }
 
-module.exports = { tick, nextRun, localParts, validTimeZone, parseDays, WEEKDAYS };
+/* ---------- Reminders before a scheduled session (e.g. WhatsApp 10 minutes ahead)
+ * Due when: now >= start - lead  and  now < start, on a scheduled day.
+ * Works across midnight (a 00:05 session gets its reminder at 23:55 the day before).
+ * `send(driver, schedule, startLabel)` does the actual sending and returns { id } or throws. */
+function reminderDue(s, tz, nowMs, leadMin) {
+  if (!leadMin) return null;
+  const ahead = nowMs + leadMin * 60000;
+  const p = localParts(tz, ahead);
+  if (!parseDays(s.days).includes(p.weekday)) return null;
+  const start = toMin(s.start_time);
+  const startMs = ahead + ((start - p.minutes) * 60 - p.seconds) * 1000;
+  if (startMs > ahead || startMs <= nowMs) return null; // not yet inside the reminder window, or already started
+  return { date: p.date, startMs };
+}
+
+async function remind(db, nowMs, send) {
+  const done = [];
+  const schedules = await db.all(`SELECT s.*, c.timezone, c.reminder_minutes FROM schedules s JOIN companies c ON c.id = s.company_id
+    WHERE s.active = 1 AND c.active = 1 AND c.status = 'approved' AND c.reminder_minutes > 0`);
+  for (const s of schedules) {
+    const tz = s.timezone || 'Asia/Riyadh';
+    const due = reminderDue(s, tz, nowMs, s.reminder_minutes);
+    if (!due) continue;
+    const drivers = s.all_drivers
+      ? await db.all('SELECT id, name, phone FROM drivers WHERE company_id = ? AND active = 1', s.company_id)
+      : await db.all(`SELECT d.id, d.name, d.phone FROM schedule_drivers sd JOIN drivers d ON d.id = sd.driver_id
+          WHERE sd.schedule_id = ? AND d.active = 1 AND d.company_id = ?`, s.id, s.company_id);
+    for (const d of drivers) {
+      // One reminder per driver per session; a failed attempt is not repeated (the card shows why)
+      const claim = await db.get(`INSERT INTO schedule_reminders (schedule_id, driver_id, run_date, status, created_at)
+        VALUES (?, ?, ?, 'sending', ?) ON CONFLICT DO NOTHING RETURNING schedule_id`, s.id, d.id, due.date, nowMs);
+      if (!claim) continue;
+      try {
+        const r = await send(d, s, s.start_time);
+        await db.run("UPDATE schedule_reminders SET status = 'sent', message_id = ? WHERE schedule_id = ? AND driver_id = ? AND run_date = ?",
+          (r && r.id) || null, s.id, d.id, due.date);
+        done.push({ schedule: s.id, driver: d.id, status: 'sent' });
+      } catch (e) {
+        const reason = String(e.message || e).slice(0, 300);
+        await db.run("UPDATE schedule_reminders SET status = ?, error = ? WHERE schedule_id = ? AND driver_id = ? AND run_date = ?",
+          reason === 'not_configured' ? 'off' : 'failed', reason, s.id, d.id, due.date);
+        done.push({ schedule: s.id, driver: d.id, status: 'failed', error: reason });
+      }
+    }
+  }
+  return done;
+}
+
+module.exports = { tick, remind, reminderDue, nextRun, localParts, validTimeZone, parseDays, WEEKDAYS };

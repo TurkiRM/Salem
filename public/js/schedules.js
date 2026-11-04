@@ -27,6 +27,13 @@
     return S.t('next_day', { d: dayName(n.weekday), t: n.start_time });
   }
 
+  /* One line per driver: the WhatsApp reminder */
+  function remLine(r) {
+    const map = { sent: ['rem_sent', 'ok'], failed: ['rem_failed', 'bad'], sending: ['run_sending', ''], off: ['rem_off', ''] };
+    const [key, cls] = map[r.status] || ['rem_sent', ''];
+    return `<div class="run"><span>${S.esc(r.driver_name)}</span><span class="pill ${cls}" ${r.error ? `title="${S.esc(r.error)}"` : ''}>${S.t(key)}</span></div>`;
+  }
+
   /* One line per driver for today: what happened with the scheduled request */
   function runLine(r) {
     let key, cls;
@@ -72,6 +79,7 @@
         <dl class="kv-list">
           <dt>${S.t('sched_drivers')}</dt><dd>${who || '—'}</dd>
           <dt>${S.t('sched_next')}</dt><dd>${s.active ? nextLabel(s.next_run) : '—'}</dd>
+          ${s.reminders && s.reminders.length ? `<dt>${S.t('wa_reminder')}</dt><dd><div class="runs">${s.reminders.map(remLine).join('')}</div></dd>` : ''}
           ${s.today_runs && s.today_runs.length ? `<dt>${S.t('sched_today')}</dt><dd><div class="runs">${s.today_runs.map(runLine).join('')}</div></dd>` : ''}
           ${s.note ? `<dt>${S.t('note_to_driver')}</dt><dd>${S.esc(s.note)}</dd>` : ''}
         </dl>
@@ -83,7 +91,7 @@
         </div>
       </div>`;
     }).join('')}</div>
-    <p class="faint" style="margin-top:.8rem">${S.t('sched_tz_note', { tz: data.timezone })}${data.local_time ? ' ' + S.t('sched_now_is', { t: String(Math.floor(data.local_time.minutes / 60)).padStart(2, '0') + ':' + String(data.local_time.minutes % 60).padStart(2, '0') }) : ''}</p>`;
+    <p class="faint" style="margin-top:.8rem">${data.whatsapp && data.whatsapp.enabled && data.whatsapp.minutes ? S.t('wa_note_on', { m: data.whatsapp.minutes }) + ' ' : data.whatsapp && !data.whatsapp.enabled ? S.t('wa_note_off') + ' ' : ''}${S.t('sched_tz_note', { tz: data.timezone })}${data.local_time ? ' ' + S.t('sched_now_is', { t: String(Math.floor(data.local_time.minutes / 60)).padStart(2, '0') + ':' + String(data.local_time.minutes % 60).padStart(2, '0') }) : ''}</p>`;
     box.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openEditor(data.schedules.find(s => s.id === Number(b.dataset.edit))));
     box.querySelectorAll('[data-pause]').forEach(b => b.onclick = async () => {
       try { await S.api('PATCH', '/api/sup/schedules/' + b.dataset.pause, { active: b.dataset.on !== '1' }); load(); }

@@ -48,6 +48,19 @@
         <div id="reqList"></div>
       </div>
 
+      <div class="panel" id="waPanel">
+        <div class="panel-head"><h2 data-i18n="wa_title">تذكير واتساب للسائقين</h2><span id="waPill"></span></div>
+        <div class="panel-body" style="display:grid;gap:.7rem">
+          <p class="muted" id="waText"></p>
+          <p class="faint" id="waErr2"></p>
+          <div class="row">
+            <input id="waTo" type="tel" dir="ltr" style="max-width:240px" placeholder="05XXXXXXXX">
+            <button class="btn" id="waBtn" data-i18n="wa_send_test">إرسال رسالة تجربة</button>
+          </div>
+          <div class="error-msg" id="waErr"></div>
+        </div>
+      </div>
+
       <div class="panel" id="emailPanel">
         <div class="panel-head"><h2 data-i18n="email_notifications">إشعارات البريد</h2><span id="emailPill"></span></div>
         <div class="panel-body" style="display:grid;gap:.7rem">
@@ -86,9 +99,11 @@
     $('#newCompany').onclick = openCompanyModal;
     $('#pwBtn').onclick = openPasswordModal;
     document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => $('#rail').classList.remove('open')));
-    S.onLangChange = () => { render(); renderEmail(); };
+    S.onLangChange = () => { render(); renderEmail(); renderWa(); };
     $('#testBtn').onclick = sendTest;
     loadEmail();
+    loadWa();
+    $('#waBtn').onclick = sendWaTest;
     load();
     setInterval(load, 30000);
   }
@@ -169,6 +184,32 @@
     });
     document.querySelectorAll('[data-approve2]').forEach(b => b.onclick = () => review(Number(b.dataset.approve2), 'approve'));
     document.querySelectorAll('[data-info]').forEach(b => b.onclick = () => openCompany(companies.find(c => c.id === Number(b.dataset.info))));
+  }
+
+  let waStatus = null;
+  async function loadWa() {
+    try { waStatus = await S.api('GET', '/api/admin/whatsapp-status'); } catch (_) {}
+    renderWa();
+  }
+  function renderWa() {
+    const w = waStatus;
+    if (!w) return;
+    $('#waPill').innerHTML = w.enabled ? `<span class="pill ok">${S.t('email_on')}</span>` : `<span class="pill warn">${S.t('email_off')}</span>`;
+    $('#waText').innerHTML = w.enabled
+      ? S.t('wa_on_text', { tpl: S.esc(w.template), lang: S.esc(w.language), sent: w.sent_7d, failed: w.failed_7d })
+      : S.t('wa_off_text');
+    $('#waErr2').textContent = w.last_error ? S.t('wa_last_error', { e: w.last_error.error }) : '';
+    $('#waBtn').disabled = !w.enabled;
+  }
+  async function sendWaTest() {
+    const err = $('#waErr'), btn = $('#waBtn');
+    err.textContent = ''; btn.disabled = true;
+    try {
+      const r = await S.api('POST', '/api/admin/whatsapp-test', { phone: $('#waTo').value });
+      S.toast(S.t('wa_test_sent', { to: r.to }));
+    } catch (x) {
+      err.textContent = x.code === 'whatsapp_failed' ? S.t('err_whatsapp_failed') : S.errorText(x);
+    } finally { btn.disabled = !(waStatus && waStatus.enabled); }
   }
 
   let emailStatus = null;

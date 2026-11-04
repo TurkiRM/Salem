@@ -142,6 +142,40 @@ At the start time Salem sends the request to every driver in the schedule, once 
 - Drivers see their upcoming scheduled sessions on their home screen. Salem has no push notifications yet, so drivers need to open Salem at session time.
 - Pausing stops future sends; deleting keeps past sessions in the history.
 
+### WhatsApp reminders before scheduled sessions (optional)
+
+Each driver in a schedule gets a WhatsApp message on his registered phone number before the session starts. The default is 10 minutes before; each company can change it in **Settings** (0 turns it off). The schedule card shows, per driver, whether the reminder was sent or why it wasn't. The admin dashboard has a **WhatsApp reminders** card with a test button.
+
+Messages that a business starts (like this reminder) must use a **message template approved by Meta**. Setup, once:
+
+1. **Create the WhatsApp app.** At developers.facebook.com → **My Apps → Create app** → type **Business** → add the **WhatsApp** product. Link it to your Meta Business account (business.facebook.com).
+2. **Add a phone number** for sending (WhatsApp → API Setup → Add phone number). Use a number that is **not** active in the normal WhatsApp app. Verifying your business in Meta Business settings raises the daily sending limit.
+3. **Create the template** in WhatsApp Manager → **Message templates → Create template**:
+   - Category: **Utility**
+   - Name: `salem_session_reminder`
+   - Language: **Arabic**
+   - Body (copy exactly; the four numbered variables are filled in by Salem):
+
+     ```
+     مرحباً {{1}}، تذكير من سالم: جلسة المراقبة «{{2}}» تبدأ الساعة {{3}}. افتح صفحة السائق {{4}} قبل أن تبدأ القيادة. قيادة آمنة.
+     ```
+
+   - Sample values Meta asks for: `فهد` · `الوردية الصباحية` · `08:00` · `https://salem-kxe4.onrender.com/driver`
+   - Submit and wait for approval (usually minutes, up to 24 hours).
+4. **Create a permanent token.** In Business settings → **Users → System users** → add a system user (Admin) → **Assign assets**: your app and your WhatsApp account (full control) → **Generate token** for the app with the permissions `whatsapp_business_messaging` and `whatsapp_business_management`. Copy it. (The temporary token on the API Setup page expires after 24 hours.)
+5. **Add environment variables on Render** and redeploy:
+   - `WHATSAPP_TOKEN` = the permanent token
+   - `WHATSAPP_PHONE_NUMBER_ID` = the **Phone number ID** from WhatsApp → API Setup (not the phone number itself)
+   - `APP_URL` = `https://salem-kxe4.onrender.com` (used for the link in the message)
+   - Optional: `WHATSAPP_TEMPLATE` and `WHATSAPP_TEMPLATE_LANG` if you named the template differently or made it in English (`en`)
+6. Admin dashboard → **WhatsApp reminders** → enter your own number → **Send test message**.
+
+Notes:
+- Phone numbers like `0551112233` are sent as `966551112233` automatically (change `WHATSAPP_DEFAULT_COUNTRY` for other countries). Numbers saved with `+` are used as they are.
+- Meta charges per template message (utility category); check current prices in WhatsApp Manager.
+- A driver whose number isn't on WhatsApp shows **Not sent** with WhatsApp's reason. Failed reminders are not retried, so nobody gets several messages.
+- **Render free plan:** the reminder can only go out if the server is awake 10 minutes before the session. Keep it awake with a paid instance, or a free uptime service that opens `/healthz` every 10 minutes (see *Scheduled sessions*).
+
 ### Email notifications (optional)
 
 Salem sends these emails, each in Arabic and English:
@@ -181,6 +215,7 @@ Per-company settings (in the panel under **Settings**): seconds looking at the s
 ```
 server.js                 API, auth, PostgreSQL database, photo storage
 scheduler.js              scheduled sessions: works out when each schedule is due and sends the requests
+whatsapp.js               WhatsApp reminders through Meta's WhatsApp Cloud API
 mailer.js                 email notifications (Resend or SMTP) and their Arabic/English templates
 scripts/fetch-model.js    downloads the MediaPipe face model to public/models
 scripts/import-sqlite.js  one-time copy of data from the old SQLite version

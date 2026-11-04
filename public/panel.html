@@ -99,6 +99,8 @@
             <p class="faint" data-i18n="min_speed_hint">تحت هذه السرعة لا تُسجَّل مخالفات (مثل الوقوف عند الإشارة أو الاصطفاف).</p>
             <label class="field"><span data-i18n="face_lost_seconds">مدة اختفاء الوجه قبل التسجيل (ثوانٍ)</span><input id="sFace" type="number" min="0" step="1" dir="ltr"></label>
             <p class="faint" data-i18n="face_lost_hint">إذا لم تظهر عينا السائق للكاميرا طوال هذه المدة أثناء الحركة (تغطية الكاميرا أو تحويل الجوال) تُسجَّل مخالفة "الوجه غير ظاهر". اكتب 0 لإيقاف هذا التنبيه.</p>
+            <label class="field"><span data-i18n="reminder_minutes">تذكير واتساب قبل الجلسة المجدولة (دقائق)</span><input id="sReminder" type="number" min="0" max="120" step="1" dir="ltr"></label>
+            <p class="faint" id="sReminderHint"></p>
             <label class="field"><span data-i18n="timezone">المنطقة الزمنية للجدولة</span><select id="sTz">
               <option value="Asia/Riyadh">Asia/Riyadh — السعودية</option>
               <option value="Asia/Dubai">Asia/Dubai — الإمارات وعُمان</option>
